@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Launcher for the stage 2 test. It is the only part that changes system Bluetooth power.
 //
-//   launcher <python> <script> <target BD_ADDR> [seconds] [--allow-speakers] [--services-only]
+//   launcher <python> <script> <target BD_ADDR> [seconds] [--allow-speakers] [--services-only] [--inject]
 //
 // It remembers that Bluetooth is on, switches it off, runs `python -I <script> --target <addr>`
 // as a child, waits (with a time limit), makes sure the child is gone, switches Bluetooth on
@@ -93,10 +93,11 @@ int main(int argc, char **argv) {
     if (argc < 4) { say("usage: launcher <python> <script> <BD_ADDR> [seconds]"); return 64; }
     const char *python = argv[1], *script = argv[2], *target = argv[3];
     int limit = argc > 4 ? atoi(argv[4]) : 90;
-    int allow_speakers = 0, services_only = 0;
+    int allow_speakers = 0, services_only = 0, inject = 0;
     for (int i = 5; i < argc; ++i) {  // the only extra arguments that are passed on
         if (strcmp(argv[i], "--allow-speakers") == 0) allow_speakers = 1;
         else if (strcmp(argv[i], "--services-only") == 0) services_only = 1;
+        else if (strcmp(argv[i], "--inject") == 0) inject = 1;
         else { say("unknown argument: %s", argv[i]); return 64; }
     }
     if (limit < 10 || limit > 300) limit = 90;
@@ -126,6 +127,7 @@ int main(int argc, char **argv) {
     int next = 5;
     if (allow_speakers) args[next++] = "--allow-speakers";
     if (services_only) args[next++] = "--services-only";
+    if (inject) args[next++] = "--inject";
     args[next] = NULL;
     int rc = posix_spawn(&child, python, NULL, NULL, args, environ);
     if (rc) { say("could not start the test program (%d)", rc); child = 0; restore(); return 7; }
