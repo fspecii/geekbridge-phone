@@ -24,7 +24,8 @@ impl MacosNotifier {
 fn show(title: &str, body: &str, sound: bool) {
     let (title, body) = (title.to_string(), body.to_string());
     std::thread::spawn(move || {
-        let mut script = String::from("display notification (item 2 of argv) with title (item 1 of argv)");
+        let mut script =
+            String::from("display notification (item 2 of argv) with title (item 1 of argv)");
         if sound {
             script.push_str(" sound name \"Ping\"");
         }

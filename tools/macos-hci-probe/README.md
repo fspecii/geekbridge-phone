@@ -111,10 +111,10 @@ What it does: restarts macOS's Bluetooth daemon so it reaches the controller thr
 Without the helper it asks for an administrator password once per run. To install the one root piece, once:
 
 ```sh
-sudo ./install-helper.sh
+sudo ../../packaging/macos/install-helper.sh
 ```
 
-Read `helper/btmode` first. It lets programs running as your user route this Mac's Bluetooth through a program of their own, which is what the pass-through does and also what malware running as you could do. `sudo ./install-helper.sh remove` takes it out.
+Read `packaging/macos/btmode` first. It lets programs running as your user route this Mac's Bluetooth through a program of their own, which is what the pass-through does and also what malware running as you could do. `sudo ../../packaging/macos/install-helper.sh remove` takes it out.
 
 Limits known so far: the call's microphone must not be a Bluetooth headset (a headset microphone would need a second voice link, which this chip will not carry, so the program keeps the Mac's input on a non-Bluetooth microphone); on this path macOS treats the chip as a generic one and sends none of Apple's chip commands except the few the pass-through sends itself.
 
@@ -124,6 +124,6 @@ Limits known so far: the call's microphone must not be a Bluetooth headset (a he
 | `stage6a_passthrough.py` | Holds the controller, passes packets, connects the phone, carries the call's sound, speaks its state. |
 | `sound_input.py` | Keeps the Mac's sound input off Bluetooth headsets while the pass-through runs. |
 | `connect.m` | The small app that asks macOS to open the phone's link. |
-| `helper/btmode`, `install-helper.sh` | The root piece and its installer. |
+| `../../packaging/macos/btmode`, `install-helper.sh` | The root piece and its installer (now also used by the app). |
 | `stage6_root.sh` | The same root step for use without the helper. |
 | `run_stage6.sh` | Runs it all and saves the log, with what the daemon logged. |

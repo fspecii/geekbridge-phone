@@ -52,12 +52,12 @@ pub mod state;
 pub mod text;
 pub mod theme;
 
+#[cfg(target_os = "macos")]
+pub mod macos;
 #[cfg(all(feature = "wayland", target_os = "linux"))]
 pub mod wayland;
 #[cfg(windows)]
 pub mod win32;
-#[cfg(target_os = "macos")]
-pub mod macos;
 
 pub use error::OverlayError;
 pub use input::{ButtonState, Key};

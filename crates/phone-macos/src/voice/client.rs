@@ -27,7 +27,10 @@ pub enum ClientError {
     /// The helper closed the connection.
     Closed,
     /// The helper answered with an error.
-    Helper { code: String, message: String },
+    Helper {
+        code: String,
+        message: String,
+    },
     Io(io::Error),
 }
 
@@ -118,7 +121,12 @@ impl HelperClient {
     }
 
     /// Sends a request and waits for its reply.
-    pub fn request(&self, op: &str, params: Value, timeout: Duration) -> Result<Reply, ClientError> {
+    pub fn request(
+        &self,
+        op: &str,
+        params: Value,
+        timeout: Duration,
+    ) -> Result<Reply, ClientError> {
         if self.is_closed() {
             return Err(ClientError::Closed);
         }
@@ -229,9 +237,16 @@ fn handle_line(line: &[u8], shared: &Shared) {
         return;
     };
     let carries_fd = message.get("fd").and_then(Value::as_bool).unwrap_or(false);
-    let fd = if carries_fd { lock(&shared.fds).pop_front() } else { None };
+    let fd = if carries_fd {
+        lock(&shared.fds).pop_front()
+    } else {
+        None
+    };
     let result = if message.get("ok").and_then(Value::as_bool).unwrap_or(false) {
-        Ok(Reply { fields: message, fd })
+        Ok(Reply {
+            fields: message,
+            fd,
+        })
     } else {
         let error = message.get("error");
         let text = |key: &str| {
@@ -286,7 +301,8 @@ pub(crate) mod testing {
     }
 
     /// `script(request) -> (reply json, optional descriptor to pass)`; `None` means stay silent.
-    pub type Script = dyn Fn(&serde_json::Value) -> Option<(serde_json::Value, Option<UnixStream>)> + Send + Sync;
+    pub type Script =
+        dyn Fn(&serde_json::Value) -> Option<(serde_json::Value, Option<UnixStream>)> + Send + Sync;
 
     impl FakeHelper {
         pub fn start(script: Arc<Script>) -> Self {
@@ -297,7 +313,9 @@ pub(crate) mod testing {
             let connection: Arc<Mutex<Option<UnixStream>>> = Arc::new(Mutex::new(None));
             let (reqs, conn) = (requests.clone(), connection.clone());
             std::thread::spawn(move || {
-                let Ok((stream, _)) = listener.accept() else { return };
+                let Ok((stream, _)) = listener.accept() else {
+                    return;
+                };
                 *conn.lock().unwrap() = Some(stream.try_clone().unwrap());
                 let mut writer = stream.try_clone().unwrap();
                 for line in BufReader::new(stream).lines() {
@@ -308,15 +326,23 @@ pub(crate) mod testing {
                         reply["id"] = request["id"].clone();
                         let data = format!("{reply}\n");
                         match fd {
-                            Some(passed) => {
-                                send_with_fd(writer.as_raw_fd(), data.as_bytes(), passed.as_raw_fd()).unwrap()
-                            }
+                            Some(passed) => send_with_fd(
+                                writer.as_raw_fd(),
+                                data.as_bytes(),
+                                passed.as_raw_fd(),
+                            )
+                            .unwrap(),
                             None => writer.write_all(data.as_bytes()).unwrap(),
                         }
                     }
                 }
             });
-            Self { path, requests, connection, _dir: dir }
+            Self {
+                path,
+                requests,
+                connection,
+                _dir: dir,
+            }
         }
 
         pub fn send_event(&self, event: serde_json::Value) {
@@ -359,7 +385,9 @@ mod tests {
     fn a_request_gets_its_reply() {
         let helper = FakeHelper::start(Arc::new(|_| ok(json!({"state": "idle"}))));
         let client = HelperClient::connect(helper.socket()).unwrap();
-        let reply = client.request("status", json!({}), Duration::from_secs(2)).unwrap();
+        let reply = client
+            .request("status", json!({}), Duration::from_secs(2))
+            .unwrap();
         assert_eq!(reply.fields["state"], "idle");
         assert_eq!(helper.requests.lock().unwrap()[0]["op"], "status");
     }
@@ -368,7 +396,13 @@ mod tests {
     fn parameters_are_sent_with_the_operation_and_an_id() {
         let helper = FakeHelper::start(Arc::new(|_| ok(json!({}))));
         let client = HelperClient::connect(helper.socket()).unwrap();
-        client.request("dial", json!({"number": "+441234567"}), Duration::from_secs(2)).unwrap();
+        client
+            .request(
+                "dial",
+                json!({"number": "+441234567"}),
+                Duration::from_secs(2),
+            )
+            .unwrap();
         let sent = helper.requests.lock().unwrap()[0].clone();
         assert_eq!(sent["op"], "dial");
         assert_eq!(sent["number"], "+441234567");
@@ -378,7 +412,10 @@ mod tests {
     #[test]
     fn a_helper_error_becomes_a_clear_error() {
         let helper = FakeHelper::start(Arc::new(|_| {
-            Some((json!({"ok": false, "error": {"code": "no_phone", "message": "no phone is connected"}}), None))
+            Some((
+                json!({"ok": false, "error": {"code": "no_phone", "message": "no phone is connected"}}),
+                None,
+            ))
         }));
         let client = HelperClient::connect(helper.socket()).unwrap();
         match client.request("answer", json!({}), Duration::from_secs(2)) {
@@ -407,10 +444,19 @@ mod tests {
             helper_end.write_all(b"phonebook").unwrap();
             // The real helper keeps its end open for the whole channel; so does this test.
             std::mem::forget(helper_end);
-            Some((json!({"ok": true, "service": "pbap", "fd": true}), Some(app_end)))
+            Some((
+                json!({"ok": true, "service": "pbap", "fd": true}),
+                Some(app_end),
+            ))
         }));
         let client = HelperClient::connect(helper.socket()).unwrap();
-        let reply = client.request("open_service", json!({"service": "pbap"}), Duration::from_secs(2)).unwrap();
+        let reply = client
+            .request(
+                "open_service",
+                json!({"service": "pbap"}),
+                Duration::from_secs(2),
+            )
+            .unwrap();
         let mut stream = unsafe { UnixStream::from_raw_fd(reply.fd.expect("a descriptor")) };
         let mut got = [0u8; 9];
         stream.read_exact(&mut got).unwrap();
@@ -421,14 +467,20 @@ mod tests {
     fn a_reply_without_the_marker_has_no_descriptor() {
         let helper = FakeHelper::start(Arc::new(|_| ok(json!({}))));
         let client = HelperClient::connect(helper.socket()).unwrap();
-        assert!(client.request("status", json!({}), Duration::from_secs(2)).unwrap().fd.is_none());
+        assert!(client
+            .request("status", json!({}), Duration::from_secs(2))
+            .unwrap()
+            .fd
+            .is_none());
     }
 
     #[test]
     fn events_reach_listeners_until_they_unsubscribe() {
         let helper = FakeHelper::start(Arc::new(|_| ok(json!({}))));
         let client = HelperClient::connect(helper.socket()).unwrap();
-        client.request("status", json!({}), Duration::from_secs(2)).unwrap(); // the helper now knows us
+        client
+            .request("status", json!({}), Duration::from_secs(2))
+            .unwrap(); // the helper now knows us
         let (tx, rx) = std::sync::mpsc::channel();
         let token = client.subscribe(move |e| {
             let _ = tx.send(e.clone());
@@ -453,10 +505,15 @@ mod tests {
         let client = Arc::new(HelperClient::connect(helper.socket()).unwrap());
         let slow = {
             let c = client.clone();
-            std::thread::spawn(move || c.request("slow", json!({}), Duration::from_secs(3)).unwrap())
+            std::thread::spawn(move || {
+                c.request("slow", json!({}), Duration::from_secs(3))
+                    .unwrap()
+            })
         };
         std::thread::sleep(Duration::from_millis(30));
-        let fast = client.request("fast", json!({}), Duration::from_secs(3)).unwrap();
+        let fast = client
+            .request("fast", json!({}), Duration::from_secs(3))
+            .unwrap();
         assert_eq!(fast.fields["op"], "fast");
         assert_eq!(slow.join().unwrap().fields["op"], "slow");
     }
@@ -464,10 +521,16 @@ mod tests {
     #[test]
     fn when_the_helper_goes_away_waiting_requests_fail_at_once() {
         let helper = Arc::new(FakeHelper::start(Arc::new(|r| {
-            if r["op"] == "hang" { None } else { ok(json!({})) }
+            if r["op"] == "hang" {
+                None
+            } else {
+                ok(json!({}))
+            }
         })));
         let client = Arc::new(HelperClient::connect(helper.socket()).unwrap());
-        client.request("status", json!({}), Duration::from_secs(2)).unwrap();
+        client
+            .request("status", json!({}), Duration::from_secs(2))
+            .unwrap();
         let waiting = {
             let c = client.clone();
             std::thread::spawn(move || c.request("hang", json!({}), Duration::from_secs(10)))
@@ -497,12 +560,21 @@ mod tests {
         let client = HelperClient::connect(helper.socket()).unwrap();
         let before = std::fs::read_dir("/dev/fd").unwrap().count();
         assert!(matches!(
-            client.request("open_service", json!({"service": "map"}), Duration::from_millis(50)),
+            client.request(
+                "open_service",
+                json!({"service": "map"}),
+                Duration::from_millis(50)
+            ),
             Err(ClientError::Timeout)
         ));
         std::thread::sleep(Duration::from_millis(600)); // the late reply arrives and is dropped
-        client.request("status", json!({}), Duration::from_secs(2)).unwrap();
+        client
+            .request("status", json!({}), Duration::from_secs(2))
+            .unwrap();
         let after = std::fs::read_dir("/dev/fd").unwrap().count();
-        assert!(after <= before + 1, "descriptors before {before}, after {after}");
+        assert!(
+            after <= before + 1,
+            "descriptors before {before}, after {after}"
+        );
     }
 }

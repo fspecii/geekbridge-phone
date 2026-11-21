@@ -2,8 +2,10 @@
 # GeekBridge Phone: switches macOS's Bluetooth daemon onto the pass-through and back.
 #
 #   btmode start <serial port> <seconds>
+#   btmode extend <seconds>
 #   btmode revert
 #   btmode status
+#   btmode version
 #
 # Installed root-owned by install-helper.sh, and allowed through sudo without a password for
 # the one user who installed it. It is the only part that needs root, so it does as little as
@@ -24,6 +26,19 @@ mkdir -p "$STATE"
 chown root:wheel "$STATE"
 chmod 755 "$STATE"
 
+seconds_ok() {
+    case "$1" in ''|*[!0-9]*) return 1 ;; esac
+    [ "$1" -ge 20 ] && [ "$1" -le 43200 ]
+}
+
+# The timer acts only if it is still the current one and nobody reverted.
+arm() {
+    RUN="$(date +%s)-$$"
+    echo "$RUN" > "$STATE/run"
+    rm -f "$STATE/reverted"
+    nohup /bin/sh -c "sleep $1; [ \"\$(cat $STATE/run 2>/dev/null)\" = \"$RUN\" ] && [ ! -e $STATE/reverted ] && { : > $STATE/reverted; rm -f $STATE/go; /bin/launchctl unsetenv BT_HCI_TRANSPORT; /usr/bin/killall bluetoothd; }" >/dev/null 2>&1 &
+}
+
 revert() {
     : > "$STATE/reverted"
     rm -f "$STATE/go"
@@ -34,34 +49,36 @@ revert() {
 case "${1:-}" in
 start)
     PORT="${2:-}"
-    SECONDS_ON="${3:-}"
     case "$PORT" in
         /dev/ttys[0-9]|/dev/ttys[0-9][0-9]|/dev/ttys[0-9][0-9][0-9]) ;;
         *) echo "not a pseudo-terminal" >&2; exit 64 ;;
     esac
     [ -c "$PORT" ] || { echo "no such port" >&2; exit 64; }
-    case "$SECONDS_ON" in ''|*[!0-9]*) echo "seconds must be a number" >&2; exit 64 ;; esac
-    [ "$SECONDS_ON" -ge 20 ] && [ "$SECONDS_ON" -le 43200 ] || { echo "seconds must be 20 to 43200" >&2; exit 64; }
-    RUN="$(date +%s)-$$"
-    echo "$RUN" > "$STATE/run"
-    rm -f "$STATE/reverted"
-    # The timer only acts if this same start is still the current one and nobody reverted it.
-    nohup /bin/sh -c "sleep $SECONDS_ON; [ \"\$(cat $STATE/run 2>/dev/null)\" = \"$RUN\" ] && [ ! -e $STATE/reverted ] && { : > $STATE/reverted; rm -f $STATE/go; /bin/launchctl unsetenv BT_HCI_TRANSPORT; /usr/bin/killall bluetoothd; }" >/dev/null 2>&1 &
+    seconds_ok "${3:-}" || { echo "seconds must be 20 to 43200" >&2; exit 64; }
+    arm "$3"
     /bin/launchctl setenv BT_HCI_TRANSPORT "H4:POSIX:$PORT,115200"
     : > "$STATE/go"
     chmod 644 "$STATE/go"
     /usr/bin/killall bluetoothd 2>/dev/null || true
-    echo "started: Bluetooth returns to its normal path in $SECONDS_ON seconds at the latest"
+    echo "started: Bluetooth returns to its normal path in $3 seconds at the latest"
+    ;;
+extend)
+    seconds_ok "${2:-}" || { echo "seconds must be 20 to 43200" >&2; exit 64; }
+    [ -e "$STATE/go" ] && [ ! -e "$STATE/reverted" ] || { echo "not on the pass-through" >&2; exit 65; }
+    arm "$2"
     ;;
 revert)
     revert
     echo "Bluetooth is back on its normal path"
     ;;
+version)
+    echo 2
+    ;;
 status)
     if [ -e "$STATE/go" ] && [ ! -e "$STATE/reverted" ]; then echo "pass-through"; else echo "normal"; fi
     ;;
 *)
-    echo "usage: btmode start <port> <seconds> | revert | status" >&2
+    echo "usage: btmode start <port> <seconds> | extend <seconds> | revert | status | version" >&2
     exit 64
     ;;
 esac

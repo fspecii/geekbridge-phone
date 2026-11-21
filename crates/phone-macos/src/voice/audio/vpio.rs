@@ -8,7 +8,14 @@ type CaptureCb = extern "C" fn(*mut c_void, *const i16, u32);
 type RenderCb = extern "C" fn(*mut c_void, *mut i16, u32);
 
 extern "C" {
-    fn gbp_vpio_start(capture: CaptureCb, render: RenderCb, user: *mut c_void, actual: *mut u32, err: *mut c_char, en: usize) -> *mut c_void;
+    fn gbp_vpio_start(
+        capture: CaptureCb,
+        render: RenderCb,
+        user: *mut c_void,
+        actual: *mut u32,
+        err: *mut c_char,
+        en: usize,
+    ) -> *mut c_void;
     fn gbp_vpio_stop(handle: *mut c_void);
 }
 
@@ -53,16 +60,31 @@ impl Drop for Unit {
 pub struct VoiceProcessingDevice;
 
 impl AudioDevice for VoiceProcessingDevice {
-    fn start(&self, capture: CaptureFn, render: RenderFn) -> Result<(u32, bool, Box<dyn Running>), String> {
+    fn start(
+        &self,
+        capture: CaptureFn,
+        render: RenderFn,
+    ) -> Result<(u32, bool, Box<dyn Running>), String> {
         let callbacks = Box::into_raw(Box::new(Callbacks { capture, render }));
         let mut rate = 0u32;
         let mut err = [0 as c_char; 160];
         // SAFETY: valid callbacks and buffers; the handle is freed by `Unit::drop`.
-        let handle = unsafe { gbp_vpio_start(capture_trampoline, render_trampoline, callbacks.cast(), &mut rate, err.as_mut_ptr(), err.len()) };
+        let handle = unsafe {
+            gbp_vpio_start(
+                capture_trampoline,
+                render_trampoline,
+                callbacks.cast(),
+                &mut rate,
+                err.as_mut_ptr(),
+                err.len(),
+            )
+        };
         if handle.is_null() {
             // SAFETY: the unit did not start, so nothing else holds the callbacks.
             unsafe { drop(Box::from_raw(callbacks)) };
-            let text = unsafe { std::ffi::CStr::from_ptr(err.as_ptr()) }.to_string_lossy().into_owned();
+            let text = unsafe { std::ffi::CStr::from_ptr(err.as_ptr()) }
+                .to_string_lossy()
+                .into_owned();
             return Err(text);
         }
         // The voice-processing unit always cancels echo.

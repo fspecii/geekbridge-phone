@@ -14,5 +14,8 @@ mod platform;
 
 pub use audio::{AudioDevice, AudioStats, CallAudio, CallAudioController};
 pub use client::{ClientError, Event, HelperClient, Reply};
+pub use lifecycle::{
+    guard_main, recover_on_start, run_guard, Power, SystemPower, VoiceMode, VoiceModeConfig,
+    VoiceModeError,
+};
 pub use platform::VoiceModePlatform;
-pub use lifecycle::{guard_main, recover_on_start, run_guard, Power, SystemPower, VoiceMode, VoiceModeConfig, VoiceModeError};

@@ -38,8 +38,12 @@ fn map_error(error: ClientError) -> PlatformError {
             PlatformError::NoService
         }
         ClientError::Helper { message, .. } => PlatformError::Other(message),
-        ClientError::Closed => PlatformError::Other("Mac voice mode has stopped. Turn it off and on again.".into()),
-        ClientError::Timeout => PlatformError::Other("Mac voice mode did not answer in time.".into()),
+        ClientError::Closed => {
+            PlatformError::Other("Mac voice mode has stopped. Turn it off and on again.".into())
+        }
+        ClientError::Timeout => {
+            PlatformError::Other("Mac voice mode did not answer in time.".into())
+        }
         ClientError::Io(e) => PlatformError::Io(e),
     }
 }
@@ -52,7 +56,9 @@ fn clean_number(number: &str) -> Option<String> {
         .collect();
     let valid = !kept.is_empty()
         && kept.len() <= 32
-        && kept.chars().all(|c| c.is_ascii_digit() || matches!(c, '+' | '*' | '#' | ',' | ';'));
+        && kept
+            .chars()
+            .all(|c| c.is_ascii_digit() || matches!(c, '+' | '*' | '#' | ',' | ';'));
     valid.then_some(kept)
 }
 
@@ -62,7 +68,9 @@ impl VoiceModePlatform {
         let sink = fault.clone();
         client.subscribe(move |event| {
             if event.name == "fault" {
-                let message = event.fields["message"].as_str().unwrap_or("the Bluetooth controller failed");
+                let message = event.fields["message"]
+                    .as_str()
+                    .unwrap_or("the Bluetooth controller failed");
                 *lock(&sink) = Some(message.to_string());
             }
         });
@@ -89,7 +97,9 @@ impl VoiceModePlatform {
 
     fn request(&self, op: &str, params: Value, timeout: Duration) -> Result<super::client::Reply> {
         if let Some(message) = lock(&self.fault).clone() {
-            return Err(PlatformError::Other(format!("Mac voice mode stopped: {message}")));
+            return Err(PlatformError::Other(format!(
+                "Mac voice mode stopped: {message}"
+            )));
         }
         self.client.request(op, params, timeout).map_err(map_error)
     }
@@ -127,7 +137,11 @@ impl Platform for VoiceModePlatform {
                     .collect()
             })
             .unwrap_or_default();
-        phones.sort_by(|a, b| b.connected.cmp(&a.connected).then_with(|| a.name.cmp(&b.name)));
+        phones.sort_by(|a, b| {
+            b.connected
+                .cmp(&a.connected)
+                .then_with(|| a.name.cmp(&b.name))
+        });
         // The helper keeps one phone connected. Until the app picks one, use the first.
         if lock(&self.selected).is_none() {
             if let Some(first) = phones.first() {
@@ -165,7 +179,10 @@ impl Platform for VoiceModePlatform {
                         id: row["id"].as_str().unwrap_or("call-1").to_string(),
                         state: CallState::parse(row["state"].as_str().unwrap_or("")),
                         number: row["number"].as_str().unwrap_or("").to_string(),
-                        name: row["name"].as_str().filter(|n| !n.is_empty()).map(str::to_string),
+                        name: row["name"]
+                            .as_str()
+                            .filter(|n| !n.is_empty())
+                            .map(str::to_string),
                     })
                     .collect()
             })
@@ -176,7 +193,8 @@ impl Platform for VoiceModePlatform {
         let number = clean_number(number)
             .ok_or_else(|| PlatformError::Other("That number cannot be dialled.".into()))?;
         self.ensure_selected(address)?;
-        self.request("dial", json!({"number": number}), QUICK).map(|_| ())
+        self.request("dial", json!({"number": number}), QUICK)
+            .map(|_| ())
     }
 
     fn answer(&self, address: &str, _call_id: &str) -> Result<()> {
@@ -260,18 +278,28 @@ mod tests {
 
     fn reply(fields: Value) -> Option<(Value, Option<UnixStream>)> {
         let mut r = json!({"ok": true});
-        r.as_object_mut().unwrap().extend(fields.as_object().unwrap().clone());
+        r.as_object_mut()
+            .unwrap()
+            .extend(fields.as_object().unwrap().clone());
         Some((r, None))
     }
 
-    fn platform(script: impl Fn(&Value) -> Option<(Value, Option<UnixStream>)> + Send + Sync + 'static) -> (FakeHelper, VoiceModePlatform) {
+    fn platform(
+        script: impl Fn(&Value) -> Option<(Value, Option<UnixStream>)> + Send + Sync + 'static,
+    ) -> (FakeHelper, VoiceModePlatform) {
         let helper = FakeHelper::start(Arc::new(script));
         let client = Arc::new(HelperClient::connect(helper.socket()).unwrap());
         (helper, VoiceModePlatform::new(client))
     }
 
     fn ops(helper: &FakeHelper) -> Vec<String> {
-        helper.requests.lock().unwrap().iter().map(|r| r["op"].as_str().unwrap().to_string()).collect()
+        helper
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|r| r["op"].as_str().unwrap().to_string())
+            .collect()
     }
 
     fn standard(request: &Value) -> Option<(Value, Option<UnixStream>)> {
@@ -279,7 +307,9 @@ mod tests {
             "phones" => reply(json!({"phones": [
                 {"address": PHONE, "name": "Sam's Z Fold5", "connected": true, "battery": 80, "apple": false},
                 {"address": "AA:BB:CC:DD:EE:FF", "name": "iPhone", "connected": false, "battery": null, "apple": true}]})),
-            "calls" => reply(json!({"calls": [{"id": "call-1", "state": "incoming", "number": "+441234567", "name": ""}]})),
+            "calls" => reply(
+                json!({"calls": [{"id": "call-1", "state": "incoming", "number": "+441234567", "name": ""}]}),
+            ),
             _ => reply(json!({})),
         }
     }
@@ -294,8 +324,18 @@ mod tests {
         assert_eq!(phones[0].battery, Some(80));
         assert!(phones[1].apple);
         p.phones().unwrap();
-        assert_eq!(ops(&helper).iter().filter(|o| *o == "select_phone").count(), 1);
-        let select = helper.requests.lock().unwrap().iter().find(|r| r["op"] == "select_phone").cloned().unwrap();
+        assert_eq!(
+            ops(&helper).iter().filter(|o| *o == "select_phone").count(),
+            1
+        );
+        let select = helper
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|r| r["op"] == "select_phone")
+            .cloned()
+            .unwrap();
         assert_eq!(select["address"], PHONE);
     }
 
@@ -320,8 +360,16 @@ mod tests {
             }
             reply(json!({}))
         });
-        let states: Vec<_> = p.calls(PHONE).unwrap().into_iter().map(|c| c.state).collect();
-        assert_eq!(states, vec![CallState::Dialing, CallState::Alerting, CallState::Active]);
+        let states: Vec<_> = p
+            .calls(PHONE)
+            .unwrap()
+            .into_iter()
+            .map(|c| c.state)
+            .collect();
+        assert_eq!(
+            states,
+            vec![CallState::Dialing, CallState::Alerting, CallState::Active]
+        );
         assert_eq!(p.calls(PHONE).unwrap()[0].name.as_deref(), Some("Ann"));
     }
 
@@ -329,7 +377,14 @@ mod tests {
     fn dialling_cleans_the_number_and_refuses_what_it_cannot_send() {
         let (helper, p) = platform(standard);
         p.dial(PHONE, "+44 (0)1234-567").unwrap();
-        let sent = helper.requests.lock().unwrap().iter().find(|r| r["op"] == "dial").cloned().unwrap();
+        let sent = helper
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|r| r["op"] == "dial")
+            .cloned()
+            .unwrap();
         assert_eq!(sent["number"], "+4401234567");
         let before = ops(&helper).len();
         for bad in ["", "abc", "1;AT+CHUP", &"1".repeat(40)] {
@@ -347,9 +402,19 @@ mod tests {
         p.send_tones(PHONE, "12#a").unwrap();
         let log = ops(&helper);
         for expected in ["answer", "hang_up", "hang_up_all", "tones"] {
-            assert!(log.iter().any(|o| o == expected), "{expected} missing in {log:?}");
+            assert!(
+                log.iter().any(|o| o == expected),
+                "{expected} missing in {log:?}"
+            );
         }
-        let tones = helper.requests.lock().unwrap().iter().find(|r| r["op"] == "tones").cloned().unwrap();
+        let tones = helper
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|r| r["op"] == "tones")
+            .cloned()
+            .unwrap();
         assert_eq!(tones["tones"], "12#A");
     }
 
@@ -359,7 +424,10 @@ mod tests {
         let cell = Mutex::new(Some(app_end));
         let (_helper, p) = platform(move |r| {
             if r["op"] == "open_service" {
-                return Some((json!({"ok": true, "service": "map", "fd": true}), cell.lock().unwrap().take()));
+                return Some((
+                    json!({"ok": true, "service": "map", "fd": true}),
+                    cell.lock().unwrap().take(),
+                ));
             }
             reply(json!({}))
         });
@@ -395,7 +463,10 @@ mod tests {
     fn a_missing_service_is_reported_as_one() {
         let (_helper, p) = platform(|r| {
             if r["op"] == "open_service" {
-                return Some((json!({"ok": false, "error": {"code": "no_service", "message": "no such service"}}), None));
+                return Some((
+                    json!({"ok": false, "error": {"code": "no_service", "message": "no such service"}}),
+                    None,
+                ));
             }
             reply(json!({}))
         });
@@ -406,11 +477,17 @@ mod tests {
     fn a_helper_error_reaches_the_user_in_plain_words() {
         let (_helper, p) = platform(|r| {
             if r["op"] == "answer" {
-                return Some((json!({"ok": false, "error": {"code": "no_phone", "message": "no phone is connected"}}), None));
+                return Some((
+                    json!({"ok": false, "error": {"code": "no_phone", "message": "no phone is connected"}}),
+                    None,
+                ));
             }
             reply(json!({}))
         });
-        assert_eq!(p.answer(PHONE, "x").unwrap_err().to_string(), "no phone is connected");
+        assert_eq!(
+            p.answer(PHONE, "x").unwrap_err().to_string(),
+            "no phone is connected"
+        );
     }
 
     #[test]
@@ -427,12 +504,18 @@ mod tests {
     fn a_controller_fault_stops_further_requests_with_its_reason() {
         let (helper, p) = platform(standard);
         p.phones().unwrap();
-        helper.send_event(json!({"event": "fault", "code": "fault", "message": "the controller crashed"}));
+        helper.send_event(
+            json!({"event": "fault", "code": "fault", "message": "the controller crashed"}),
+        );
         std::thread::sleep(Duration::from_millis(200));
         let before = ops(&helper).len();
         let message = p.calls(PHONE).unwrap_err().to_string();
         assert!(message.contains("the controller crashed"), "{message}");
-        assert_eq!(ops(&helper).len(), before, "no request is sent after a fault");
+        assert_eq!(
+            ops(&helper).len(),
+            before,
+            "no request is sent after a fault"
+        );
     }
 
     #[test]
@@ -446,9 +529,25 @@ mod tests {
             reply(json!({}))
         });
         let found = p.scan_nearby(100).unwrap();
-        assert_eq!(found, vec![NearbyDevice { id: "11:22:33:44:55:66".into(), name: "Pixel 9".into() }]);
-        let sent = helper.requests.lock().unwrap().iter().find(|r| r["op"] == "scan").cloned().unwrap();
-        assert_eq!(sent["seconds"], 30, "the time is held to what the helper allows");
+        assert_eq!(
+            found,
+            vec![NearbyDevice {
+                id: "11:22:33:44:55:66".into(),
+                name: "Pixel 9".into()
+            }]
+        );
+        let sent = helper
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|r| r["op"] == "scan")
+            .cloned()
+            .unwrap();
+        assert_eq!(
+            sent["seconds"], 30,
+            "the time is held to what the helper allows"
+        );
     }
 
     #[test]
@@ -458,7 +557,9 @@ mod tests {
         let helper = Arc::new(FakeHelper::start(Arc::new(move |r| {
             if r["op"] == "pair" {
                 if let Some(h) = cell.lock().unwrap().as_ref() {
-                    h.send_event(json!({"event": "pairing_code", "address": r["address"], "code": "123456"}));
+                    h.send_event(
+                        json!({"event": "pairing_code", "address": r["address"], "code": "123456"}),
+                    );
                 }
                 std::thread::sleep(Duration::from_millis(100));
             }
@@ -469,7 +570,11 @@ mod tests {
         p.client.request("status", json!({}), QUICK).ok(); // connect handshake for the fake
         let shown = Arc::new(Mutex::new(Vec::new()));
         let seen = shown.clone();
-        p.pair("11:22:33:44:55:66", Arc::new(move |code| lock(&seen).push(code))).unwrap();
+        p.pair(
+            "11:22:33:44:55:66",
+            Arc::new(move |code| lock(&seen).push(code)),
+        )
+        .unwrap();
         assert_eq!(*lock(&shown), vec![Some("123456".to_string())]);
         helper.send_event(json!({"event": "pairing_code", "address": "x", "code": "999999"}));
         std::thread::sleep(Duration::from_millis(150));
@@ -489,7 +594,11 @@ mod tests {
         p.phones().unwrap();
         p.unpair(PHONE).unwrap();
         p.phones().unwrap();
-        assert_eq!(counter.load(Ordering::SeqCst), 2, "a new phone is selected after the old one is removed");
+        assert_eq!(
+            counter.load(Ordering::SeqCst),
+            2,
+            "a new phone is selected after the old one is removed"
+        );
     }
 
     #[test]
@@ -497,7 +606,14 @@ mod tests {
         let (helper, p) = platform(standard);
         p.calls(PHONE).unwrap();
         p.calls("AA:BB:CC:DD:EE:FF").unwrap();
-        let selects: Vec<_> = helper.requests.lock().unwrap().iter().filter(|r| r["op"] == "select_phone").map(|r| r["address"].clone()).collect();
+        let selects: Vec<_> = helper
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|r| r["op"] == "select_phone")
+            .map(|r| r["address"].clone())
+            .collect();
         assert_eq!(selects, vec![json!(PHONE), json!("AA:BB:CC:DD:EE:FF")]);
     }
 }

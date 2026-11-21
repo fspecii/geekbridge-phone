@@ -166,13 +166,24 @@ fn init_logging() {
 fn main() {
     #[cfg(target_os = "macos")]
     {
-        // The guard process that restores Bluetooth if the app dies in voice mode.
+        // Two small modes the app starts itself for Mac voice mode: the paired devices as text,
+        // and the guard that puts Bluetooth back if the app dies while voice mode is on.
         let args: Vec<String> = std::env::args().skip(1).collect();
-        if args.first().map(String::as_str) == Some("--macos-btguard") {
-            if let (Some(pid), Some(marker)) = (args.get(1).and_then(|p| p.parse::<i32>().ok()), args.get(2)) {
-                phone_macos::voice::guard_main(pid, std::path::Path::new(marker));
+        match args.first().map(String::as_str) {
+            Some("--macos-paired") => {
+                print!("{}", phone_macos::paired_devices_text());
+                return;
             }
-            return;
+            Some("--macos-ptguard") => {
+                if let Some(pid) = args.get(1).and_then(|p| p.parse::<i32>().ok()) {
+                    phone_macos::passthrough::helper::guard_main(
+                        pid,
+                        &phone_macos::passthrough::helper::Helper::real(),
+                    );
+                }
+                return;
+            }
+            _ => {}
         }
     }
     init_logging();
