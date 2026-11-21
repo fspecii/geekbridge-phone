@@ -88,7 +88,22 @@ class Policy:
     with the command `voice_accept(address, link_type)` builds, and nothing about that link
     is shown to the daemon. Everything else, the phone's other traffic included, passes."""
 
-    def __init__(self, phone=None, voice_accept=None):
+    def __init__(self, phone=None, voice_accept=None, lead_other_links=True):
+        # While the phone's voice link is up, flag the other classic links (the headphones, the
+        # mouse) high priority so the chip keeps scheduling them; without it the chip starves
+        # the headphones' A2DP and a call plays nothing in them. Off only in tests that check
+        # the plain pass-through.
+        self.lead_other_links = lead_other_links
+        self.roles = []
+        # Second experiment, same switch: while the phone's voice link is up, the other links
+        # are told to use packets of at most three slots, and are given the long ones back
+        # when it closes. A voice packet goes out every 12 slots with a retry window after
+        # it; a five-slot music packet and its answer may never find a free run that long.
+        # macOS would do this itself if it knew about the call. It does not: we hide it.
+        self.other_links = set()
+        self.outbox = []             # commands of ours for the chip; the pump sends them
+        self.own_commands = 0        # answers to those are ours to see, not the host's
+        self.shortened = set()
         self.to_chip = collections.Counter()
         self.to_host = collections.Counter()
         self.opcodes = collections.Counter()
@@ -137,6 +152,15 @@ class Policy:
             if opcode in SERIAL_BOOT_COMMANDS:
                 self.answered[opcode] += 1
                 return "answer", command_complete(opcode)
+            if opcode == 0x0409 and len(packet) >= 11:  # accept connection request: address, role
+                mine = self.phone is not None and packet[4:10] == self.phone
+                wanted = packet[10]
+                if self.lead_other_links and not mine and wanted == 1:
+                    packet = packet[:10] + bytes([0]) + packet[11:]
+                if len(self.roles) < 40:
+                    self.roles.append([self._now(), "phone" if mine else "another device",
+                                       f"accepted, host asked to {'follow' if wanted == 1 else 'lead'}"
+                                       + (", changed to lead" if packet[10] != wanted else "")])
         if kind == ACL:
             self._signalling(packet, "mac")
         self.to_chip[kind] += 1
@@ -161,6 +185,8 @@ class Policy:
             mine = self.phone is not None and packet[6:12] == self.phone
             who = "phone" if mine else "another device"
             self._note(f"classic link to {who}: type {packet[12]}, status 0x{packet[3]:02x}")
+            if not mine and packet[3] == 0 and packet[12] == ACL_LINK_TYPE:
+                self.other_links.add(int.from_bytes(packet[4:6], "little") & 0x0FFF)
             if mine and packet[3] == 0 and packet[12] == ACL_LINK_TYPE:
                 self.phone_link = int.from_bytes(packet[4:6], "little") & 0x0FFF
         elif kind == EVENT and len(packet) >= 5 and packet[1] == 0x3E and packet[3] in (0x01, 0x0A) and packet[4] == 0:
@@ -177,6 +203,13 @@ class Policy:
                 self._note("hardware error event")
             elif packet[1] == DISCONNECTION_COMPLETE and len(packet) >= 7:
                 self.disconnect_reasons[f"0x{packet[6]:02x}"] += 1
+                self.other_links.discard(int.from_bytes(packet[4:6], "little") & 0x0FFF)
+            elif packet[1] == 0x12 and len(packet) >= 11 and len(self.roles) < 40:  # role change
+                mine = self.phone is not None and packet[4:10] == self.phone
+                self.roles.append([self._now(), "phone" if mine else "another device",
+                                   f"role now {'follow' if packet[10] == 1 else 'lead'}, status 0x{packet[3]:02x}"])
+            elif packet[1] == 0x11:  # flush occurred: the chip gave up on a data packet
+                self.flushes = getattr(self, "flushes", 0) + 1
             elif packet[1] == SYNCHRONOUS_COMPLETE and len(packet) >= 6:
                 self._note(f"host voice link {'opened' if packet[3] == 0 else 'failed'}")
 
@@ -202,7 +235,16 @@ class Policy:
                 self.voice_pending = True
                 self._note(f"phone asked for voice (link type {packet[12]}); accepting")
                 return "send", self.voice_accept(self.phone, packet[12])
+        elif event == 0x0E and len(packet) >= 6 and self.own_commands \
+                and int.from_bytes(packet[4:6], "little") == self.BCM_HIGH_PRIORITY:
+            self.own_commands -= 1
+            self._note(f"high-priority command answered, status 0x{packet[6] if len(packet) > 6 else 0:02x}")
+            return "drop", packet
         elif event == COMMAND_STATUS and len(packet) >= 7:
+            if self.own_commands and int.from_bytes(packet[5:7], "little") == self.BCM_HIGH_PRIORITY:
+                self.own_commands -= 1
+                self._note(f"high-priority command answered, status 0x{packet[3]:02x}")
+                return "drop", packet
             if self.voice_pending and int.from_bytes(packet[5:7], "little") in VOICE_ACCEPT_OPCODES:
                 if packet[3] != 0:
                     self.voice_pending = False
@@ -216,7 +258,13 @@ class Policy:
                 if packet[3] == 0:
                     self.voice_handle = int.from_bytes(packet[4:6], "little") & 0x0FFF
                     self.voice["links_opened"] += 1
-                    self._note("phone voice link open")
+                    shape = ""
+                    if event == SYNCHRONOUS_COMPLETE and len(packet) >= 19:
+                        shape = (f": every {packet[13]} slots, retry window {packet[14]}, "
+                                 f"{int.from_bytes(packet[15:17], 'little')} bytes in, "
+                                 f"{int.from_bytes(packet[17:19], 'little')} bytes out")
+                    self._note("phone voice link open" + shape)
+                    self._shorten_others()
                 else:
                     self.voice["links_failed"] += 1
                     self._note(f"phone voice link failed, status 0x{packet[3]:02x}")
@@ -226,8 +274,34 @@ class Policy:
                 self.voice_handle = None
                 self.voice["links_closed"] += 1
                 self._note(f"phone voice link closed, reason 0x{packet[6]:02x}")
+                self._restore_others()
                 return "drop", packet
         return None
+
+    # Broadcom vendor command "high priority connection" (0xFC57): a connection handle and an
+    # enable byte. These chips (bcm4377/4378/4388) starve an audio ACL link against reserved
+    # traffic unless it is flagged high priority; macOS sends this at A2DP start, but not for a
+    # link it does not know about, which on this route is all of them. We send it ourselves for
+    # the length of the call. It must go once the link is up and streaming, never during connect.
+    BCM_HIGH_PRIORITY = 0xFC57
+
+    def _priority(self, handle, enable):
+        self.outbox.append(bytes([COMMAND, 0x57, 0xFC, 3]) + handle.to_bytes(2, "little") + bytes([enable]))
+        self.own_commands += 1
+
+    def _shorten_others(self):
+        if not self.lead_other_links:
+            return
+        for handle in sorted(self.other_links):
+            self._priority(handle, 1)
+            self.shortened.add(handle)
+        if self.shortened:
+            self._note(f"other links set high priority for the call: {len(self.shortened)}")
+
+    def _restore_others(self):
+        for handle in sorted(self.shortened & self.other_links):
+            self._priority(handle, 0)
+        self.shortened.clear()
 
     def voice_reply(self, packet):
         """Silence of the same size, for the same link: one packet back for each packet in."""
@@ -253,6 +327,8 @@ class Policy:
             "disconnect_reasons": dict(self.disconnect_reasons),
             "timeline": self.timeline,
             "low_energy_links_opened": getattr(self, "le_links", 0),
+            "link_roles": self.roles,
+            "chip_flushes": getattr(self, "flushes", 0),
             "hands_free_signalling": self.signalling,
             "ran_seconds": self._now(),
         }

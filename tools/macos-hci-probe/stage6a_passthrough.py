@@ -90,9 +90,10 @@ class PhoneLink:
 
     FIRST_TRY, BETWEEN, TRIES = 8, 12, 6
 
-    def __init__(self, address, started, runner=None):
+    def __init__(self, address, started, runner=None, others=()):
         import subprocess
         self.address, self.next_try, self.tries = address, started + self.FIRST_TRY, 0
+        self.others = list(others)   # headphones do not always come back by themselves after the restart
         self.helper = None
         self.announced = False
         app = str(Path(__file__).resolve().parent / "build" / "GBBtConnect.app")
@@ -101,12 +102,38 @@ class PhoneLink:
             ["/bin/sh", "-c", script, app, self.address.replace(":", "-")],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True))
 
+    APP = Path(__file__).resolve().parent.parent.parent / "dist" / "GeekBridge Phone (dev).app"
+
+    def restart_app(self):
+        """Starts the app afresh once the phone is linked. An app that was already open holds a
+        session from before the daemon restart: it shows the phone as connected and sends
+        nothing (seen live twice: no call banner, messages timing out, and not one hands-free
+        line on the link in five minutes)."""
+        import subprocess
+        if not self.APP.exists():
+            return False
+        subprocess.run(["/usr/bin/pkill", "-x", "geekbridge-phone"], check=False)
+        time.sleep(1)
+        subprocess.Popen(["/usr/bin/open", str(self.APP)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+
+    def connect_others(self):
+        import subprocess
+        app = str(Path(__file__).resolve().parent / "build" / "GBBtConnect.app")
+        for address in self.others:
+            subprocess.Popen(["/usr/bin/open", "-g", app, "--args", address.replace(":", "-")],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if self.others:
+            say("reconnecting-other-devices", count=len(self.others))
+
     def tick(self, now, policy):
         if policy.phone_link is not None:
             if not self.announced:
                 self.announced = True
-                say("phone-linked", after_tries=self.tries)
-                speak("Phone connected. You can call now.")
+                self.connect_others()
+                restarted = self.restart_app()
+                say("phone-linked", after_tries=self.tries, app_restarted=restarted)
+                speak("Phone connected. Starting the app. You can call in ten seconds.")
             return
         self.announced = False
         if self.helper is not None:
@@ -128,17 +155,26 @@ class Sound:
     the user has selected, Bluetooth headphones included. Opened when the phone's voice link
     opens and closed with it."""
 
-    def __init__(self, opener=None):
+    def __init__(self, opener=None, inputs=None):
+        self.inputs = inputs
         self.opener = opener or self._open_default
         self.bridge = self.streams = None
         self.failure = None
         self.calls = []
 
-    @staticmethod
-    def _open_default():
+    def _open_default(self):
         import sounddevice as sd
 
         import audio_io
+        # A call plays on Bluetooth headphones when any are connected: the proxy flags the
+        # headphone link high priority (0xFC57) so the chip keeps scheduling it through the
+        # call. With no headphones connected, the output is left alone (the Mac's speakers).
+        if self.inputs is not None and self.inputs.prefer_bluetooth_output():
+            say("sound-output-moved-to-headphones")
+        # The sound library reads the Mac's devices once; read them again so this call uses the
+        # output and input chosen now, not the ones from the last call.
+        sd._terminate()
+        sd._initialize()
         speakers = "speaker" in sd.query_devices(None, "output")["name"].lower()
         # Through loudspeakers the caller would hear themselves, so only one side talks at a time.
         return audio_io.open_streams(sd, allow_speakers=True, half_duplex=speakers)
@@ -166,6 +202,8 @@ class Sound:
         if self.streams is not None:
             self.streams.close()
         self.bridge = self.streams = None
+        if self.inputs is not None:
+            self.inputs.restore_output()
 
 
 def pump(host_fd, chip, policy, seconds, clock=time.monotonic, sound=None, inputs=None, phone_link=None):
@@ -195,6 +233,8 @@ def pump(host_fd, chip, policy, seconds, clock=time.monotonic, sound=None, input
                     chip.send(out)
                 else:
                     os.write(host_fd, out)
+        while policy.outbox:
+            chip.send(policy.outbox.pop(0))
         packet = chip.receive(2)
         if packet is not None:
             action, out = policy.from_chip(packet)
@@ -218,12 +258,16 @@ def build_policy(phone_text):
     from bumble import hci, hfp
 
     def accept(address, link_type):
-        kind = hfp.DefaultCodecParameters.SCO_CVSD_D1 if link_type == 0 else hfp.DefaultCodecParameters.ESCO_CVSD_S1
+        # S4, not S1: S1 sends a voice packet every 6 slots, which leaves no room on the air for
+        # the 5-slot packets that carry music to headphones (seen live: every music packet
+        # flushed by the chip for the length of a call). S4 sends twice as much half as often.
+        kind = hfp.DefaultCodecParameters.SCO_CVSD_D1 if link_type == 0 else hfp.DefaultCodecParameters.ESCO_CVSD_S4
         command = hci.HCI_Enhanced_Accept_Synchronous_Connection_Request_Command(
             bd_addr=hci.Address(phone_text, hci.Address.PUBLIC_DEVICE_ADDRESS), **hfp.ESCO_PARAMETERS[kind].asdict())
         return bytes(command)
 
-    return Policy(phone=bytes(hci.Address(phone_text, hci.Address.PUBLIC_DEVICE_ADDRESS)), voice_accept=accept)
+    return Policy(phone=bytes(hci.Address(phone_text, hci.Address.PUBLIC_DEVICE_ADDRESS)), voice_accept=accept,
+                  lead_other_links=True)
 
 
 def main():
@@ -235,6 +279,8 @@ def main():
     parser.add_argument("--go-file", required=True, help="appears when the root step has restarted bluetoothd")
     parser.add_argument("--phone", default=None, help="stage 6b: keep this phone's voice link for ourselves")
     parser.add_argument("--sound", action="store_true", help="stage 6c: carry the call's sound, not silence")
+    parser.add_argument("--also-connect", action="append", default=[],
+                        help="another paired device to reconnect once the pass-through is up (headphones)")
     args = parser.parse_args()
     if not 20 <= args.seconds <= 43200:
         sys.exit("seconds must be 20 to 43200")
@@ -266,10 +312,10 @@ def main():
         if with_sound:
             from sound_input import Inputs
             inputs = Inputs()
-        link = PhoneLink(args.phone, time.monotonic()) if args.phone else None
+        link = PhoneLink(args.phone, time.monotonic(), others=args.also_connect) if args.phone else None
         if link is not None:
             speak("Pass-through is up. Connecting the phone.")
-        pump(host_fd, chip, policy, args.seconds, sound=Sound() if with_sound else None, inputs=inputs,
+        pump(host_fd, chip, policy, args.seconds, sound=Sound(inputs=inputs) if with_sound else None, inputs=inputs,
              phone_link=link)
         say("time-up")
         if link is not None:
