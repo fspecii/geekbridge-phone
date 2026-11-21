@@ -1,0 +1,8 @@
+# What the shipped helper needs, pinned. Bumble is installed with --no-deps: its USB, serial and
+# websocket transports are not used here, and one of them (libusb) would add an LGPL library.
+bumble==0.0.236
+cryptography==50.0.2
+cffi==2.1.1
+pycparser==3.12
+pyee==16.0.1
+typing_extensions==4.16.0

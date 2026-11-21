@@ -1,0 +1,1 @@
+`acipc_bridge.c` and `acipc_bridge.h` are copied unmodified from https://github.com/lzsnolimit/ai-caller (server/mac/native), MIT licence, copyright 2026 ai-caller contributors. The licence text is in LICENSE next to them.
