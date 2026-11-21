@@ -597,6 +597,25 @@ impl eframe::App for App {
         egui::CentralPanel::default()
             .frame(Frame::new().fill(pal.content).inner_margin(Margin::ZERO))
             .show(ctx, |ui| {
+                if crate::boot::voice_mode_active() {
+                    Frame::new()
+                        .inner_margin(Margin::symmetric(theme::S3 as i8, 0))
+                        .show(ui, |ui| {
+                            ui.add_space(theme::S3);
+                            let pressed = crate::ui::widgets::banner(
+                                ui,
+                                &pal,
+                                crate::ui::widgets::Tone::Info,
+                                "Mac voice mode is on",
+                                "Bluetooth on this Mac is off, so keyboards, mice and headphones are disconnected. It comes back when you quit the app. Closing the window only hides it.",
+                                Some("Quit app"),
+                                false,
+                            );
+                            if pressed == Some(crate::ui::widgets::BannerAction::Primary) {
+                                cmds.push(Cmd::Quit);
+                            }
+                        });
+                }
                 banners::show(
                     ui,
                     &pal,
@@ -648,6 +667,9 @@ impl eframe::App for App {
                 }
                 Cmd::OpenGuide => self.guide.open_manually(),
                 Cmd::OpenPairing => self.pairing.open(&self.platform, ctx),
+                Cmd::RemovePhone(address, name) => {
+                    self.pairing.start_unpair(&self.platform, ctx, address, name)
+                }
                 Cmd::Quit => self.quit(ctx),
             }
         }
@@ -705,5 +727,7 @@ impl eframe::App for App {
         if let Some(pump) = self.pump.take() {
             let _ = pump.join();
         }
+        // Mac voice mode: stop the helper and switch system Bluetooth back on before the process ends.
+        crate::boot::shutdown();
     }
 }

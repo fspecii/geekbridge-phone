@@ -209,8 +209,13 @@ pub struct DemoDir {
 
 impl DemoDir {
     pub fn create() -> std::io::Result<Self> {
-        let path =
-            std::env::temp_dir().join(format!("geekbridge-phone-demo-{}", std::process::id()));
+        // A Unix socket path must stay under about 100 bytes, and macOS's per-user temp
+        // directory alone is longer than half of that, so use /tmp there.
+        #[cfg(target_os = "macos")]
+        let base = std::path::PathBuf::from("/tmp");
+        #[cfg(not(target_os = "macos"))]
+        let base = std::env::temp_dir();
+        let path = base.join(format!("geekbridge-phone-demo-{}", std::process::id()));
         std::fs::create_dir_all(&path)?;
         Ok(Self { path })
     }

@@ -41,6 +41,10 @@ wayland-protocols-wlr = { version = "0.3", default-features = false, features = 
 phone-windows = { path = "../phone-windows" }
 phone-overlay = { path = "../phone-overlay" }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+phone-macos = { path = "../phone-macos" }
+phone-overlay = { path = "../phone-overlay" }
+
 [features]
 default = ["accesskit", "demo"]
 # Screen-reader support through egui's AccessKit integration (AT-SPI, UIA, NSAccessibility).

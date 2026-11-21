@@ -56,6 +56,8 @@ pub mod theme;
 pub mod wayland;
 #[cfg(windows)]
 pub mod win32;
+#[cfg(target_os = "macos")]
+pub mod macos;
 
 pub use error::OverlayError;
 pub use input::{ButtonState, Key};
@@ -89,7 +91,15 @@ pub fn spawn(config: OverlayConfig) -> Result<(OverlayHandle, Receiver<Action>),
     {
         win32::spawn(config)
     }
-    #[cfg(not(any(all(feature = "wayland", target_os = "linux"), windows)))]
+    #[cfg(target_os = "macos")]
+    {
+        macos::spawn(config)
+    }
+    #[cfg(not(any(
+        all(feature = "wayland", target_os = "linux"),
+        windows,
+        target_os = "macos"
+    )))]
     {
         let _ = config;
         Err(OverlayError::Unsupported)
