@@ -80,7 +80,9 @@ ACCEPT = bytes([COMMAND, 0x3E, 0x04, 6]) + PHONE
 
 
 def voice_policy():
-    return Policy(phone=PHONE, voice_accept=lambda address, link_type: ACCEPT)
+    # Plain: keeps the phone's voice link but does not touch the other links, so these tests
+    # check the pass-through on its own. The high-priority behaviour has its own tests.
+    return Policy(phone=PHONE, voice_accept=lambda address, link_type: ACCEPT, lead_other_links=False)
 
 
 def request(address, link_type):

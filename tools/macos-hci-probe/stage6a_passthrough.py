@@ -166,15 +166,11 @@ class Sound:
         import sounddevice as sd
 
         import audio_io
-        # Bluetooth headphones play nothing during a call yet: the chip drops their music packets
-        # while the call's voice link runs. So a call plays on the Mac's own speakers unless
-        # GBP_HEADPHONES=1 asks for the headphones (the experiment that tries to fix it).
-        if self.inputs is not None:
-            if os.environ.get("GBP_HEADPHONES") == "1":
-                if self.inputs.prefer_bluetooth_output():
-                    say("sound-output-moved-to-headphones")
-            elif self.inputs.use_built_in_output():
-                say("sound-output-moved-to-speakers-for-the-call")
+        # A call plays on Bluetooth headphones when any are connected: the proxy flags the
+        # headphone link high priority (0xFC57) so the chip keeps scheduling it through the
+        # call. With no headphones connected, the output is left alone (the Mac's speakers).
+        if self.inputs is not None and self.inputs.prefer_bluetooth_output():
+            say("sound-output-moved-to-headphones")
         # The sound library reads the Mac's devices once; read them again so this call uses the
         # output and input chosen now, not the ones from the last call.
         sd._terminate()
@@ -271,7 +267,7 @@ def build_policy(phone_text):
         return bytes(command)
 
     return Policy(phone=bytes(hci.Address(phone_text, hci.Address.PUBLIC_DEVICE_ADDRESS)), voice_accept=accept,
-                  lead_other_links=os.environ.get("GBP_HEADPHONES") == "1")
+                  lead_other_links=True)
 
 
 def main():

@@ -98,15 +98,15 @@ Stage 5c, a real call with the mouse and headphones beside it (up to 200 seconds
 
 ## Run stage 6 (calls on the Mac while macOS keeps every Bluetooth device)
 
-Read the "simpler route" sections of `docs/MACOS-COEXIST.md` first. Verified live on one Mac mini (macOS 27.2): the pass-through, a phone's voice link kept for a whole call, and two calls with sound. The phone is paired with macOS in the ordinary way, in System Settings.
+Read the "simpler route" sections of `docs/MACOS-COEXIST.md` first. Verified live on one Mac mini (macOS 27.2): a call answered on the Mac, its sound in Bluetooth headphones, the mouse and headphones staying connected throughout, system Bluetooth on. The phone is paired with macOS in the ordinary way, in System Settings.
 
 ```sh
-./run_stage6.sh 90                        # 6a: plain pass-through
-./run_stage6.sh 300 "Z Fold5"             # 6b: also keep that phone's voice link (silence, counted)
-./run_stage6.sh 300 "Z Fold5" sound       # 6c: the call's sound on the Mac's current output and input
+./run_stage6.sh 90                                  # 6a: plain pass-through
+./run_stage6.sh 300 "Z Fold5"                       # 6b: also keep that phone's voice link (silence, counted)
+./run_stage6.sh 14400 "Z Fold5" sound "FreeBuds"    # 6c: calls with sound; reconnect those headphones
 ```
 
-What it does: restarts macOS's Bluetooth daemon so it reaches the controller through our program, connects the phone, and speaks its state aloud ("Phone connected. You can call now.", "Call audio is on the Mac."). Open the GeekBridge app after the spoken "pass-through is up": an app opened earlier holds a dead session. Answer calls in the app. Everything is put back when the run ends, by a timer if it does not end properly, and by a reboot in any case.
+What it does: restarts macOS's Bluetooth daemon so it reaches the controller through our program, connects the phone (and any headphones named as a fourth word), restarts the GeekBridge app (one opened before the restart holds a dead session), and speaks its state aloud ("Phone connected. You can call now.", "Call audio is on the Mac."). Answer calls in the app. The call's sound goes to Bluetooth headphones when any are connected, otherwise the Mac's speakers; the headphone audio link is flagged high priority (Broadcom 0xFC57) so the chip keeps scheduling it through the call. Everything is put back when the run ends, by a timer if it does not end properly, and by a reboot in any case.
 
 Without the helper it asks for an administrator password once per run. To install the one root piece, once:
 
@@ -116,7 +116,7 @@ sudo ./install-helper.sh
 
 Read `helper/btmode` first. It lets programs running as your user route this Mac's Bluetooth through a program of their own, which is what the pass-through does and also what malware running as you could do. `sudo ./install-helper.sh remove` takes it out.
 
-Limits known so far: the call's microphone must not be a Bluetooth headset (the program moves the Mac's sound input to another microphone while it runs); on this path macOS treats the chip as a generic one and sends none of Apple's chip commands.
+Limits known so far: the call's microphone must not be a Bluetooth headset (a headset microphone would need a second voice link, which this chip will not carry, so the program keeps the Mac's input on a non-Bluetooth microphone); on this path macOS treats the chip as a generic one and sends none of Apple's chip commands except the few the pass-through sends itself.
 
 | Path | What it is |
 | --- | --- |

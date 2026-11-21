@@ -88,11 +88,11 @@ class Policy:
     with the command `voice_accept(address, link_type)` builds, and nothing about that link
     is shown to the daemon. Everything else, the phone's other traffic included, passes."""
 
-    def __init__(self, phone=None, voice_accept=None, lead_other_links=False):
-        # Experimental: make this Mac the leader of every link but the phone's. With the Mac
-        # following on the headphones' link and leading the phone's, the chip serves two
-        # separate timings at once, a likely reason music to the headphones is dropped while
-        # the call's voice link runs (seen live: "L2CAP (chip) flush occured" throughout a call).
+    def __init__(self, phone=None, voice_accept=None, lead_other_links=True):
+        # While the phone's voice link is up, flag the other classic links (the headphones, the
+        # mouse) high priority so the chip keeps scheduling them; without it the chip starves
+        # the headphones' A2DP and a call plays nothing in them. Off only in tests that check
+        # the plain pass-through.
         self.lead_other_links = lead_other_links
         self.roles = []
         # Second experiment, same switch: while the phone's voice link is up, the other links
