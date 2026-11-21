@@ -4,6 +4,7 @@
 #   ./run_stage6.sh [seconds]                   6a: plain pass-through; default 90
 #   ./run_stage6.sh <seconds> "<phone>"         6b: also keep that phone's voice link (silence, counted)
 #   ./run_stage6.sh <seconds> "<phone>" sound   6c: the same, with the call's sound on the Mac's input and output
+#   ./run_stage6.sh <seconds> "<phone>" sound "<headphones>"   also reconnect those headphones
 #
 # With the helper installed (sudo ./install-helper.sh, once) it asks for no password and may run
 # for up to twelve hours; without it, it asks once and runs for up to ten minutes. While it
@@ -17,6 +18,8 @@ PHONE_ARGS=""
 if [ -n "${2:-}" ]; then
     PHONE_ARGS="--phone $(.venv/bin/python -I keys_import.py "$2" --print-address)"
     [ "${3:-}" = sound ] && PHONE_ARGS="$PHONE_ARGS --sound"
+    # A fourth word names headphones to reconnect once the pass-through is up.
+    [ -n "${4:-}" ] && PHONE_ARGS="$PHONE_ARGS --also-connect $(.venv/bin/python -I keys_import.py "$4" --print-address)"
 fi
 mkdir -p logs
 LOG="logs/stage6a-$(date +%Y%m%d-%H%M%S).log"
@@ -27,8 +30,23 @@ if [ -x "$HELPER" ] && sudo -n "$HELPER" status >/dev/null 2>&1; then
     GO_FILE=/var/run/geekbridge-btmode/go
     start_root() { sudo -n "$HELPER" start "$1" "$TOTAL"; }
     revert_root() { sudo -n "$HELPER" revert; }
-    sudo -n "$HELPER" revert >/dev/null
+    # Only put Bluetooth back first if a session was left on the pass-through, and then wait
+    # for it to come up: restarting the daemon while the chip is still booting leaves the chip
+    # with no channels to open (seen live: status -19 for the whole wait).
+    if [ "$(sudo -n "$HELPER" status)" = pass-through ]; then
+        sudo -n "$HELPER" revert >/dev/null
+        for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+            /usr/sbin/system_profiler SPBluetoothDataType 2>/dev/null | grep -q "State: On" && break
+            sleep 2
+        done
+        sleep 3
+    fi
 else
+    if [ "$TOTAL" -gt 600 ]; then
+        echo "runs over 600 seconds need the helper: sudo ./install-helper.sh (once)" >&2
+        rm -f "$PORT_FILE"
+        exit 64
+    fi
     GO_FILE="$PORT_FILE.go"
     rm -f "$GO_FILE"
     start_root() { sudo "$D/stage6_root.sh" start "$1" "$TOTAL" "$GO_FILE"; }

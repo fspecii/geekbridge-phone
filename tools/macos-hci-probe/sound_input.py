@@ -33,6 +33,34 @@ def choose(current, devices):
     return others[0] if others else None
 
 
+def choose_output(current, devices):
+    """Pure logic. `devices` is a list of (id, transport bytes, input channels, output channels).
+    Returns the Bluetooth headphones to play the call on, or None to leave the output alone.
+
+    Headphones that are connected are where a call should be heard, yet macOS does not always
+    make them the output on this path (seen live: a call played on the built-in speakers with
+    headphones connected). An output-only device is preferred: that is the headphones' music
+    side, which needs no voice link."""
+    by_id = {row[0]: row for row in devices}
+    if current in by_id and by_id[current][1] in BLUETOOTH:
+        return None
+    outputs = [row for row in devices if row[1] in BLUETOOTH and row[3] > 0]
+    if not outputs:
+        return None
+    outputs.sort(key=lambda row: row[2] > 0)
+    return outputs[0][0]
+
+
+def choose_wired_output(current, devices):
+    """Pure logic, same rows as choose_output. Returns a built-in output to play the call on
+    when the current output is Bluetooth, or None to leave it alone."""
+    by_id = {row[0]: row for row in devices}
+    if current in by_id and by_id[current][1] not in BLUETOOTH:
+        return None
+    built_in = [row[0] for row in devices if row[1] == b"bltn" and row[3] > 0]
+    return built_in[0] if built_in else None
+
+
 class Inputs:
     def __init__(self):
         self.ca = ctypes.CDLL(ctypes.util.find_library("CoreAudio"))
@@ -48,6 +76,62 @@ class Inputs:
         if self.ca.AudioObjectGetPropertyData(obj, ctypes.byref(address), 0, None, ctypes.byref(size), buffer):
             return None
         return buffer.raw[:size.value]
+
+    def _channels(self, device, scope):
+        config = self._get(device, "slay", scope, None) or b""
+        # AudioBufferList: a count, then per buffer: channels (u32), size (u32), pointer (8 bytes).
+        total = 0
+        if len(config) >= 4:
+            for index in range(struct.unpack("I", config[:4])[0]):
+                offset = 8 + index * 16
+                if offset + 4 <= len(config):
+                    total += struct.unpack("I", config[offset:offset + 4])[0]
+        return total
+
+    def default_output(self):
+        raw = self._get(SYSTEM_OBJECT, "dOut", "glob", None)
+        return struct.unpack("I", raw[:4])[0] if raw else None
+
+    def output_devices(self):
+        raw = self._get(SYSTEM_OBJECT, "dev#", "glob", None) or b""
+        rows = []
+        for (device,) in struct.iter_unpack("I", raw[:len(raw) // 4 * 4]):
+            transport = self._get(device, "tran", "glob", None)
+            kind = struct.pack(">I", struct.unpack("I", transport[:4])[0]) if transport else b""
+            rows.append((device, kind, self._channels(device, "inpt"), self._channels(device, "outp")))
+        return rows
+
+    def _set_output(self, target):
+        address = Address(fourcc("dOut"), fourcc("glob"), 0)
+        value = ctypes.c_uint32(target)
+        return self.ca.AudioObjectSetPropertyData(SYSTEM_OBJECT, ctypes.byref(address), 0, None, 4,
+                                                  ctypes.byref(value)) == 0
+
+    def use_built_in_output(self):
+        """For the length of a call: plays on the Mac's own speakers if the output is Bluetooth.
+        Returns True if it moved the output; restore_output() puts it back."""
+        current = self.default_output()
+        target = choose_wired_output(current, self.output_devices())
+        if target is None or not self._set_output(target):
+            return False
+        self.original_output = current
+        return True
+
+    def restore_output(self):
+        original = getattr(self, "original_output", None)
+        if original is not None:
+            self._set_output(original)
+            self.original_output = None
+
+    def prefer_bluetooth_output(self):
+        """Moves the Mac's sound output to connected Bluetooth headphones. True if it did."""
+        target = choose_output(self.default_output(), self.output_devices())
+        if target is None:
+            return False
+        address = Address(fourcc("dOut"), fourcc("glob"), 0)
+        value = ctypes.c_uint32(target)
+        return self.ca.AudioObjectSetPropertyData(SYSTEM_OBJECT, ctypes.byref(address), 0, None, 4,
+                                                  ctypes.byref(value)) == 0
 
     def default_input(self):
         raw = self._get(SYSTEM_OBJECT, "dIn ", "glob", None)

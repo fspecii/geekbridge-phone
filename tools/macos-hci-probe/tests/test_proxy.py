@@ -175,7 +175,8 @@ class PhoneVoiceTests(unittest.TestCase):
         summary = policy.summary()
         self.assertEqual([what for _, what in summary["timeline"]],
                          ["phone asked for voice (link type 2); accepting", "accept answered with status 0x00",
-                          "phone voice link open", "first phone voice packet", "hardware error event",
+                          "phone voice link open: every 0 slots, retry window 0, 0 bytes in, 0 bytes out",
+                          "first phone voice packet", "hardware error event",
                           "phone voice link closed, reason 0x13"])
         self.assertEqual(summary["host_voice_links"]["0x021"]["packets"], 2)
         self.assertEqual((summary["hardware_errors"], summary["phone_voice_seconds"]), (1, 1))
@@ -266,6 +267,17 @@ class PhoneLinkTests(unittest.TestCase):
         stage6a_passthrough.say = lambda *a, **k: None
         stage6a_passthrough.speak = lambda *a, **k: None
 
+    def test_the_app_is_started_afresh_once_when_the_phone_links(self):
+        restarts = []
+        link = stage6a_passthrough.PhoneLink("AA:BB:CC:00:00:01", 0, runner=lambda: None)
+        link.restart_app = lambda: restarts.append(1) or True
+        link.connect_others = lambda: None
+        policy = voice_policy()
+        policy.phone_link = 0x0C
+        for now in (1, 2, 3):
+            link.tick(now, policy)
+        self.assertEqual(restarts, [1])
+
     def test_it_keeps_asking_until_the_phone_links_and_then_stops(self):
         class Helper:
             returncode = 4
@@ -276,6 +288,7 @@ class PhoneLinkTests(unittest.TestCase):
 
         started = []
         link = stage6a_passthrough.PhoneLink("AA:BB:CC:00:00:01", 0, runner=lambda: started.append(1) or Helper())
+        link.restart_app = lambda: False
         policy = voice_policy()
         for now in (1, 9, 15, 22, 30):
             link.tick(now, policy)
@@ -299,6 +312,73 @@ class PhoneLinkTests(unittest.TestCase):
         for now in range(0, 600, 5):
             link.tick(now, voice_policy())
         self.assertEqual(len(started), stage6a_passthrough.PhoneLink.TRIES)
+
+
+class LinkRoleTests(unittest.TestCase):
+    def accept(self, address, role):
+        return bytes([COMMAND, 0x09, 0x04, 7]) + address + bytes([role])
+
+    def test_roles_are_recorded_and_left_alone_by_default(self):
+        policy = voice_policy()
+        command = self.accept(BUDS, 1)
+        self.assertEqual(policy.from_host(command), ("forward", command))
+        policy.from_chip(bytes([EVENT, 0x12, 8, 0]) + BUDS + bytes([0]))
+        notes = [(who, what) for _, who, what in policy.summary()["link_roles"]]
+        self.assertEqual(notes, [("another device", "accepted, host asked to follow"),
+                                 ("another device", "role now lead, status 0x00")])
+
+    def test_the_experiment_makes_the_mac_lead_other_links_but_never_touches_the_phones(self):
+        policy = Policy(phone=PHONE, voice_accept=lambda a, t: ACCEPT, lead_other_links=True)
+        self.assertEqual(policy.from_host(self.accept(BUDS, 1)), ("forward", self.accept(BUDS, 0)))
+        self.assertEqual(policy.from_host(self.accept(PHONE, 1)), ("forward", self.accept(PHONE, 1)))
+        self.assertEqual(policy.from_host(self.accept(BUDS, 0)), ("forward", self.accept(BUDS, 0)))
+
+    def test_the_experiment_shortens_other_links_packets_for_the_call_and_hides_the_answers(self):
+        policy = Policy(phone=PHONE, voice_accept=lambda a, t: ACCEPT, lead_other_links=True)
+        policy.from_chip(bytes([EVENT, 0x03, 11, 0, 0x0D, 0x00]) + BUDS + bytes([1, 0]))
+        policy.from_chip(request(PHONE, 2))
+        policy.from_chip(status_for(0x043E))
+        policy.from_chip(voice_open(PHONE, 0x20))
+        self.assertEqual(policy.outbox, [bytes([COMMAND, 0x0F, 0x04, 4, 0x0D, 0x00, 0x18, 0x3C])])
+        policy.outbox.clear()
+        self.assertEqual(policy.from_chip(status_for(0x040F))[0], "drop")
+        self.assertEqual(policy.from_chip(bytes([EVENT, 0x1D, 5, 0, 0x0D, 0x00, 0x18, 0x3C]))[0], "drop")
+        policy.from_chip(closed(0x20))
+        self.assertEqual(policy.outbox, [bytes([COMMAND, 0x0F, 0x04, 4, 0x0D, 0x00, 0x18, 0xCC])])
+        self.assertEqual(policy.from_chip(status_for(0x040F))[0], "drop")
+        later = status_for(0x040F)
+        self.assertEqual(policy.from_chip(later), ("forward", later))
+
+    def test_without_the_experiment_no_packet_types_are_changed(self):
+        policy = voice_policy()
+        policy.from_chip(bytes([EVENT, 0x03, 11, 0, 0x0D, 0x00]) + BUDS + bytes([1, 0]))
+        policy.from_chip(request(PHONE, 2))
+        policy.from_chip(status_for(0x043E))
+        policy.from_chip(voice_open(PHONE, 0x20))
+        self.assertEqual(policy.outbox, [])
+
+    def test_packets_the_chip_gave_up_on_are_counted(self):
+        policy = voice_policy()
+        policy.from_chip(bytes([EVENT, 0x11, 2, 0x0D, 0x00]))
+        self.assertEqual(policy.summary()["chip_flushes"], 1)
+
+
+class SoundOutputTests(unittest.TestCase):
+    def test_a_call_falls_back_to_the_built_in_speakers_when_the_output_is_bluetooth(self):
+        import sound_input
+        speakers, music, hdmi = (75, b"bltn", 0, 2), (112, b"blue", 0, 2), (95, b"hdmi", 0, 2)
+        self.assertEqual(sound_input.choose_wired_output(112, [hdmi, music, speakers]), 75)
+        self.assertIsNone(sound_input.choose_wired_output(75, [hdmi, music, speakers]))
+        self.assertIsNone(sound_input.choose_wired_output(112, [hdmi, music]))
+
+    def test_connected_headphones_become_the_output_and_their_music_side_is_preferred(self):
+        import sound_input
+        speakers, webcam = (75, b"bltn", 0, 2), (91, b"usb ", 2, 0)
+        music, headset = (112, b"blue", 0, 2), (118, b"blue", 1, 1)
+        self.assertEqual(sound_input.choose_output(75, [speakers, webcam, headset, music]), 112)
+        self.assertEqual(sound_input.choose_output(75, [speakers, headset]), 118)
+        self.assertIsNone(sound_input.choose_output(112, [speakers, music]))
+        self.assertIsNone(sound_input.choose_output(75, [speakers, webcam]))
 
 
 class FakeBridge:

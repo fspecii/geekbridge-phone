@@ -256,3 +256,31 @@ Changes: the pass-through now asks macOS to open the phone's link itself (`conne
 - macOS served its own Bluetooth devices through the same program for the whole run.
 
 So on this route a call is answered on the Mac and its sound runs through the Mac, both ways, with macOS keeping the mouse and the headphones as its own devices. Not yet shown: the caller's voice in Bluetooth headphones (the output was the built-in speakers in these two calls; with headphones selected as output macOS plays to them over A2DP, which the 22:50 run showed stays up), and a headset microphone as the call's microphone.
+
+### Stage 6c, 2026-11-22 00:09: headphones as the call's output play nothing
+
+With the helper installed and the app restarted automatically once the phone links, calls work unattended: two more calls ran with sound on the Mac's speakers (00:06).
+
+Then with Bluetooth headphones (HUAWEI FreeBuds SE 2) as the output: the program opened them (44.1 kHz, full duplex), delivered the caller's voice to them for the whole call with no stream errors, and the owner heard nothing. The daemon's log for those seconds is full of `A2DP packet flushed: L2CAP (chip) flush occured` and `Audio Queue full, remove oldest`: the chip gave up on the music packets to the headphones while the phone's voice link was running, and stopped doing so when the call ended.
+
+So on this chip, as driven here, the phone's voice link and A2DP to headphones do not run together. Not yet known why. One candidate is link roles: if the Mac leads the phone's link and follows on the headphones' link, the chip has to serve two timings at once. The pass-through now records role changes and the chip's flush events, and `GBP_HEADPHONES=1` turns on an experiment that makes the Mac lead every link but the phone's.
+
+Until that is settled, a call plays on the Mac's own speakers even when Bluetooth headphones are the Mac's output; the output is put back when the call ends.
+
+### Headphones during a call: three experiments, all failed (2026-11-22, 00:15 to 00:29)
+
+Each with `GBP_HEADPHONES=1`, one real call, HUAWEI FreeBuds SE 2 as the output, webcam microphone as the input.
+
+| Idea | What was done | Result |
+| --- | --- | --- |
+| The Mac follows on the headphones' link | Accept every other device's connection as leader | No effect. The Mac already leads the phone's and the headphones' links; no role changes were seen at all. |
+| The voice link leaves no room on the air | Accept the phone's voice link with S4 parameters | The phone agreed: a packet every 12 slots, retry window 2, 60 bytes each way. The chip still flushed 284 headphone packets in a 14-second call. The owner heard a moment of sound, then nothing. |
+| Five-slot music packets do not fit between voice packets | Limit the other links to packets of at most three slots while the voice link is up | Still several hundred `A2DP packet flushed` lines for the call; no sound. |
+
+Also seen in every one of these calls: the Bluetooth mouse freezes for a few seconds as the call is answered, then recovers.
+
+What stands: with the phone's voice link routed to the host, this chip does not deliver data to the other classic links at the rate A2DP needs, whatever the roles, the voice timing or the packet sizes. A mouse survives because it needs very little. What has not been tried is giving the chip the configuration macOS normally sends it: on the serial path the daemon reports `Invalid chipset 0`, treats the chip as a third-party dongle and sends none of Apple's vendor commands, which is where scheduling and coexistence settings would be.
+
+For now a call plays on the Mac's own speakers, and the Mac's output is put back to the headphones when the call ends. `run_stage6.sh` takes the headphones' name as a fourth word and reconnects them after the daemon restart.
+
+Two script faults found and fixed on the way: a precautionary revert at the start of every run restarted the daemon a second time while the chip was still booting (status -19, nothing to open); and the app has to be started after the phone links, which the pass-through now does itself.
