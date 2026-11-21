@@ -1,0 +1,67 @@
+#!/bin/sh
+# GeekBridge Phone: switches macOS's Bluetooth daemon onto the pass-through and back.
+#
+#   btmode start <serial port> <seconds>
+#   btmode revert
+#   btmode status
+#
+# Installed root-owned by install-helper.sh, and allowed through sudo without a password for
+# the one user who installed it. It is the only part that needs root, so it does as little as
+# possible and takes nothing from the caller on trust:
+#   - the port must be a pseudo-terminal (/dev/ttysNNN), the seconds a number in a fixed range;
+#   - it writes only inside its own root-owned folder, never to a path the caller names;
+#   - every start sets a detached timer that puts Bluetooth back by itself.
+# A reboot also puts everything back: the setting does not survive one.
+#
+# What installing this means: any program running as that user can route this Mac's Bluetooth
+# through a program of its own. That is what the pass-through does, and it is also what
+# malware running as that user could do. Do not install it on a Mac you do not control.
+set -eu
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+STATE=/var/run/geekbridge-btmode
+[ "$(id -u)" = 0 ] || { echo "needs root" >&2; exit 77; }
+mkdir -p "$STATE"
+chown root:wheel "$STATE"
+chmod 755 "$STATE"
+
+revert() {
+    : > "$STATE/reverted"
+    rm -f "$STATE/go"
+    /bin/launchctl unsetenv BT_HCI_TRANSPORT
+    /usr/bin/killall bluetoothd 2>/dev/null || true
+}
+
+case "${1:-}" in
+start)
+    PORT="${2:-}"
+    SECONDS_ON="${3:-}"
+    case "$PORT" in
+        /dev/ttys[0-9]|/dev/ttys[0-9][0-9]|/dev/ttys[0-9][0-9][0-9]) ;;
+        *) echo "not a pseudo-terminal" >&2; exit 64 ;;
+    esac
+    [ -c "$PORT" ] || { echo "no such port" >&2; exit 64; }
+    case "$SECONDS_ON" in ''|*[!0-9]*) echo "seconds must be a number" >&2; exit 64 ;; esac
+    [ "$SECONDS_ON" -ge 20 ] && [ "$SECONDS_ON" -le 43200 ] || { echo "seconds must be 20 to 43200" >&2; exit 64; }
+    RUN="$(date +%s)-$$"
+    echo "$RUN" > "$STATE/run"
+    rm -f "$STATE/reverted"
+    # The timer only acts if this same start is still the current one and nobody reverted it.
+    nohup /bin/sh -c "sleep $SECONDS_ON; [ \"\$(cat $STATE/run 2>/dev/null)\" = \"$RUN\" ] && [ ! -e $STATE/reverted ] && { : > $STATE/reverted; rm -f $STATE/go; /bin/launchctl unsetenv BT_HCI_TRANSPORT; /usr/bin/killall bluetoothd; }" >/dev/null 2>&1 &
+    /bin/launchctl setenv BT_HCI_TRANSPORT "H4:POSIX:$PORT,115200"
+    : > "$STATE/go"
+    chmod 644 "$STATE/go"
+    /usr/bin/killall bluetoothd 2>/dev/null || true
+    echo "started: Bluetooth returns to its normal path in $SECONDS_ON seconds at the latest"
+    ;;
+revert)
+    revert
+    echo "Bluetooth is back on its normal path"
+    ;;
+status)
+    if [ -e "$STATE/go" ] && [ ! -e "$STATE/reverted" ]; then echo "pass-through"; else echo "normal"; fi
+    ;;
+*)
+    echo "usage: btmode start <port> <seconds> | revert | status" >&2
+    exit 64
+    ;;
+esac

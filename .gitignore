@@ -9,3 +9,4 @@ helper/macos-btd/build/
 helper/macos-btd/runtime-cache/
 tools/macos-hci-probe/build/
 .DS_Store
+tools/macos-hci-probe/logs/

@@ -35,6 +35,33 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 PLIST
 codesign --force --sign - "$APP"
 
+# Stage 6: the small app that asks macOS to connect the phone (see connect.m).
+CONNECT=build/GBBtConnect.app
+rm -rf "$CONNECT"
+mkdir -p "$CONNECT/Contents/MacOS"
+clang -fobjc-arc -Wall -Werror -o "$CONNECT/Contents/MacOS/connect" connect.m -framework Foundation -framework IOBluetooth
+cat > "$CONNECT/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleName</key><string>GBBtConnect</string>
+<key>CFBundleIdentifier</key><string>dev.geekbridge.btconnect</string>
+<key>CFBundleExecutable</key><string>connect</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>LSBackgroundOnly</key><true/>
+<key>NSBluetoothAlwaysUsageDescription</key><string>GeekBridge Phone test: connects your phone so a call can be answered on this Mac.</string>
+</dict></plist>
+PLIST
+codesign --force --sign - "$CONNECT"
+
+# Test tone for stage 5b (headphones), when ffmpeg is here. Six seconds, the mandatory A2DP codec.
+if command -v ffmpeg >/dev/null 2>&1; then
+    ffmpeg -loglevel error -y -f lavfi -i "sine=frequency=440:duration=6" -af "volume=0.25" \
+        -ac 2 -ar 44100 -c:a sbc -f sbc build/tone.sbc
+    ffmpeg -loglevel error -y -f lavfi -i "sine=frequency=440:duration=120" -af "volume=0.15" \
+        -ac 2 -ar 44100 -c:a sbc -f sbc build/tone-long.sbc
+fi
+
 # Offline tests: the safety filter and the key store.
 .venv/bin/python -I -m unittest discover -s tests
 echo "built: build/libacipc_bridge.dylib and $APP"
