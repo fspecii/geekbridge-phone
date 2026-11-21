@@ -60,7 +60,8 @@ impl Default for PairingState {
         Self {
             stage: Stage::Closed,
             rx: None,
-            auto_opened: false,
+            // On macOS nothing happens by itself: searching starts only from the button.
+            auto_opened: cfg!(target_os = "macos"),
             none_since: None,
         }
     }
@@ -105,6 +106,17 @@ impl PairingState {
         } else {
             ctx.request_repaint_after(AUTO_OPEN_AFTER);
         }
+    }
+
+    /// Removes a phone's pairing from outside the window (Settings), then shows the window.
+    pub fn start_unpair(
+        &mut self,
+        platform: &Arc<dyn Platform>,
+        ctx: &egui::Context,
+        address: String,
+        name: String,
+    ) {
+        self.unpair(platform, ctx, address, name);
     }
 
     fn scan(&mut self, platform: &Arc<dyn Platform>, ctx: &egui::Context) {

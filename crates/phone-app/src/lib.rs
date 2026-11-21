@@ -30,7 +30,9 @@ pub mod notify;
 pub mod notify_freedesktop;
 #[cfg(target_os = "windows")]
 mod notify_windows;
-#[cfg(any(target_os = "linux", target_os = "windows"))]
+#[cfg(target_os = "macos")]
+mod notify_macos;
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 pub mod overlay_notifier;
 pub mod platform_ui;
 pub mod pump;
@@ -150,10 +152,10 @@ pub fn run(opts: RunOptions) -> Result<(), String> {
         }
         (p, Some(control))
     } else {
-        (boot::live_platform(), None)
+        (boot::live_platform(&paths, &settings), None)
     };
     #[cfg(not(feature = "demo"))]
-    let platform = boot::live_platform();
+    let platform = boot::live_platform(&paths, &settings);
 
     let app_id = if opts.demo { DEMO_APP_ID } else { APP_ID };
     let [w, h] = opts.size.unwrap_or([940.0, 660.0]);
@@ -195,7 +197,7 @@ pub fn run(opts: RunOptions) -> Result<(), String> {
         #[cfg(feature = "demo")]
         demo_dir,
     });
-    eframe::run_native(
+    let result = eframe::run_native(
         "GeekBridge Phone",
         native,
         Box::new(move |cc| match boot.take() {
@@ -203,5 +205,7 @@ pub fn run(opts: RunOptions) -> Result<(), String> {
             None => Err("the window was created twice".into()),
         }),
     )
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string());
+    boot::shutdown();
+    result
 }

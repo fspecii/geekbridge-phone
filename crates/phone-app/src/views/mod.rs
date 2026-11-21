@@ -30,6 +30,8 @@ pub enum Cmd {
     OpenGuide,
     /// Open the "Pair a phone" window.
     OpenPairing,
+    /// Remove the pairing with a phone (address, name); the "Pair a phone" window shows it.
+    RemovePhone(String, String),
     /// Quit the whole app.
     Quit,
 }

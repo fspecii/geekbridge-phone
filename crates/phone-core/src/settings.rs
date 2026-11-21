@@ -43,6 +43,9 @@ pub struct Settings {
     /// Where recordings go; `None` means `~/Music/GeekBridge Calls` (or the
     /// platform's equivalent).
     pub recordings_dir: Option<String>,
+    /// macOS only: carry call voice through this Mac with our own Bluetooth stack. System
+    /// Bluetooth is off while this is on. Takes effect the next time the app starts.
+    pub mac_voice_mode: bool,
 }
 
 impl Default for Settings {
@@ -63,6 +66,7 @@ impl Default for Settings {
             calls_audio_only: true,
             record_calls: false,
             recordings_dir: None,
+            mac_voice_mode: false,
         }
     }
 }

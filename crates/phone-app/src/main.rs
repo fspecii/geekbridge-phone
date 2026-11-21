@@ -164,6 +164,17 @@ fn init_logging() {
 }
 
 fn main() {
+    #[cfg(target_os = "macos")]
+    {
+        // The guard process that restores Bluetooth if the app dies in voice mode.
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        if args.first().map(String::as_str) == Some("--macos-btguard") {
+            if let (Some(pid), Some(marker)) = (args.get(1).and_then(|p| p.parse::<i32>().ok()), args.get(2)) {
+                phone_macos::voice::guard_main(pid, std::path::Path::new(marker));
+            }
+            return;
+        }
+    }
     init_logging();
     let cli = match parse(std::env::args().skip(1)) {
         Ok(c) => c,
@@ -204,7 +215,7 @@ fn main() {
     }
     // Banners in the top-right corner for calls and texts (falls back to desktop
     // notifications where the compositor has no layer-shell).
-    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
     {
         opts.notifier = Some(phone_app::overlay_notifier::factory());
     }

@@ -233,9 +233,9 @@ mod tests {
     #[test]
     fn the_phone_address_is_the_last_part_of_the_device_id() {
         assert_eq!(
-            address_from_device_id("Bluetooth#Bluetooth90:e8:68:0f:30:72-6c:ac:c2:5c:46:da")
+            address_from_device_id("Bluetooth#Bluetooth90:e8:68:0f:30:72-6c:ac:c2:00:00:01")
                 .as_deref(),
-            Some("6C:AC:C2:5C:46:DA")
+            Some("6C:AC:C2:00:00:01")
         );
         assert_eq!(address_from_device_id("nonsense"), None);
     }
@@ -243,10 +243,10 @@ mod tests {
     #[test]
     fn apple_is_told_by_the_vendor_id_in_the_phone_s_own_device_id() {
         let iphone = r"\\?\BTHENUM#{0000111f-0000-1000-8000-00805f9b34fb}_VID&0001004c_PID&12a8#9&2e5a28ba&1&AABBCCDDEEFF_C00000000#{bd41df2d}\service";
-        let samsung = r"\\?\BTHENUM#{0000111f-0000-1000-8000-00805f9b34fb}_VID&00010075_PID&0100#9&2e5a28ba&1&6CACC25C46DA_C00000000#{bd41df2d}\service";
+        let samsung = r"\\?\BTHENUM#{0000111f-0000-1000-8000-00805f9b34fb}_VID&00010075_PID&0100#9&2e5a28ba&1&6CACC2000001_C00000000#{bd41df2d}\service";
         assert!(id_is_apple(iphone, "AABBCCDDEEFF"));
-        assert!(!id_is_apple(samsung, "6CACC25C46DA"));
+        assert!(!id_is_apple(samsung, "6CACC2000001"));
         // Another phone's address does not make this phone Apple.
-        assert!(!id_is_apple(iphone, "6CACC25C46DA"));
+        assert!(!id_is_apple(iphone, "6CACC2000001"));
     }
 }

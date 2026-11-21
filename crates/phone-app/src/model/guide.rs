@@ -351,7 +351,7 @@ mod tests {
         assert_eq!(computer_label(None), "this computer");
         let f = Facts {
             computer: "my-laptop",
-            phone_name: "Vali's iPhone",
+            phone_name: "Sam's iPhone",
             contacts_len: 1,
         };
         assert!(detail(StepKind::Texts, W, &f).contains("\u{201c}my-laptop\u{201d}"));
@@ -360,7 +360,7 @@ mod tests {
         assert!(detail(StepKind::Contacts, W, &f).contains("Sync Contacts"));
         assert!(detail(StepKind::Call, W, &f).contains("Audio"));
         assert!(detail(StepKind::Call, W, &f).contains("\u{201c}my-laptop\u{201d}"));
-        assert_eq!(detail(StepKind::Pair, D, &f), "Connected to Vali's iPhone.");
+        assert_eq!(detail(StepKind::Pair, D, &f), "Connected to Sam's iPhone.");
         assert_eq!(detail(StepKind::Contacts, D, &f), "1 contact loaded.");
         let many = Facts {
             contacts_len: 250,

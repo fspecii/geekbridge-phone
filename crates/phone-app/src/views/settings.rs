@@ -167,6 +167,20 @@ impl SettingsState {
                 "Save the audio of calls on this computer.",
                 &mut s.record_calls,
             );
+            #[cfg(target_os = "macos")]
+            {
+                widgets::card_divider(ui, &pal);
+                toggle_row(
+                    ui,
+                    &pal,
+                    "Mac voice mode",
+                    "Talk through this Mac's speakers and microphone. Bluetooth on this Mac is switched off while it is on, so keyboards, mice and headphones disconnect. Takes effect the next time the app starts.",
+                    &mut s.mac_voice_mode,
+                );
+                if let Some(note) = crate::boot::voice_mode_note() {
+                    ui.add(egui::Label::new(theme::caption(&pal, &format!("Voice mode did not start: {note}"))).wrap());
+                }
+            }
             ui.add_space(S2);
             ui.add(
                 egui::Label::new(theme::caption(
@@ -279,7 +293,11 @@ impl SettingsState {
                 ui.add(
                     egui::Label::new(theme::caption(
                         &pal,
-                        "No paired phones. Pair your phone in your system's Bluetooth settings.",
+                        if cfg!(any(target_os = "windows", target_os = "macos")) {
+                            "No paired phones. Press Pair below to find your phone."
+                        } else {
+                            "No paired phones. Pair your phone in your system's Bluetooth settings."
+                        },
                     ))
                     .wrap(),
                 );
@@ -301,8 +319,27 @@ impl SettingsState {
                 if widgets::radio_row(ui, &pal, selected, &p.name, &sub).clicked() {
                     s.preferred_phone = Some(p.address.clone());
                 }
+                #[cfg(any(target_os = "windows", target_os = "macos"))]
+                ui.horizontal(|ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if theme::pill(
+                            ui,
+                            &pal,
+                            "Remove",
+                            ButtonKind::Plain,
+                            true,
+                            PillSize::Regular,
+                            0.0,
+                        )
+                        .clicked()
+                        {
+                            cx.cmds
+                                .push(Cmd::RemovePhone(p.address.clone(), p.name.clone()));
+                        }
+                    });
+                });
             }
-            #[cfg(target_os = "windows")]
+            #[cfg(any(target_os = "windows", target_os = "macos"))]
             {
                 widgets::card_divider(ui, &pal);
                 widgets::setting_row(
@@ -362,7 +399,7 @@ impl SettingsState {
                 ui,
                 &pal,
                 "Keep running when the window is closed",
-                "Closing minimises the window so calls and texts still arrive. Quit with Ctrl+Q.",
+                "Closing minimises the window so calls and texts still arrive. Quit with Ctrl+Q. In Mac voice mode, Bluetooth on this Mac stays off until you quit.",
                 &mut s.keep_running_in_tray,
             );
             widgets::card_divider(ui, &pal);

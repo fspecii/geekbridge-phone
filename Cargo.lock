@@ -2646,6 +2646,7 @@ dependencies = [
  "log",
  "phone-core",
  "phone-linux",
+ "phone-macos",
  "phone-overlay",
  "phone-update",
  "phone-windows",
@@ -2685,6 +2686,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "phone-macos"
+version = "0.1.4"
+dependencies = [
+ "cc",
+ "libc",
+ "log",
+ "phone-core",
+ "phone-obex",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "phone-obex"
 version = "0.1.4"
 dependencies = [
@@ -2696,6 +2710,7 @@ dependencies = [
 name = "phone-overlay"
 version = "0.1.4"
 dependencies = [
+ "cc",
  "cosmic-text",
  "smithay-client-toolkit 0.19.2",
  "thiserror 2.0.21",

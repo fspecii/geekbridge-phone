@@ -3,3 +3,9 @@ target/
 packaging/windows/layout/
 *.log
 dist/
+.venv/
+__pycache__/
+helper/macos-btd/build/
+helper/macos-btd/runtime-cache/
+tools/macos-hci-probe/build/
+.DS_Store
