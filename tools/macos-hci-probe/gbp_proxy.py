@@ -235,13 +235,15 @@ class Policy:
                 self.voice_pending = True
                 self._note(f"phone asked for voice (link type {packet[12]}); accepting")
                 return "send", self.voice_accept(self.phone, packet[12])
-        elif event == 0x1D and len(packet) >= 8 and (self.shortened or self.own_commands):
-            return "drop", packet     # "packet type changed", for a change we asked for
+        elif event == 0x0E and len(packet) >= 6 and self.own_commands \
+                and int.from_bytes(packet[4:6], "little") == self.BCM_HIGH_PRIORITY:
+            self.own_commands -= 1
+            self._note(f"high-priority command answered, status 0x{packet[6] if len(packet) > 6 else 0:02x}")
+            return "drop", packet
         elif event == COMMAND_STATUS and len(packet) >= 7:
-            if self.own_commands and int.from_bytes(packet[5:7], "little") == 0x040F:
+            if self.own_commands and int.from_bytes(packet[5:7], "little") == self.BCM_HIGH_PRIORITY:
                 self.own_commands -= 1
-                if packet[3] != 0:
-                    self._note(f"packet type change refused, status 0x{packet[3]:02x}")
+                self._note(f"high-priority command answered, status 0x{packet[3]:02x}")
                 return "drop", packet
             if self.voice_pending and int.from_bytes(packet[5:7], "little") in VOICE_ACCEPT_OPCODES:
                 if packet[3] != 0:
@@ -276,25 +278,29 @@ class Policy:
                 return "drop", packet
         return None
 
-    SHORT_PACKETS = 0x3C18   # DM1 DH1 DM3 DH3 and their faster forms; no five-slot packets
-    ALL_PACKETS = 0xCC18
+    # Broadcom vendor command "high priority connection" (0xFC57): a connection handle and an
+    # enable byte. These chips (bcm4377/4378/4388) starve an audio ACL link against reserved
+    # traffic unless it is flagged high priority; macOS sends this at A2DP start, but not for a
+    # link it does not know about, which on this route is all of them. We send it ourselves for
+    # the length of the call. It must go once the link is up and streaming, never during connect.
+    BCM_HIGH_PRIORITY = 0xFC57
 
-    def _packet_types(self, handle, types):
-        self.outbox.append(bytes([COMMAND, 0x0F, 0x04, 4]) + handle.to_bytes(2, "little") + types.to_bytes(2, "little"))
+    def _priority(self, handle, enable):
+        self.outbox.append(bytes([COMMAND, 0x57, 0xFC, 3]) + handle.to_bytes(2, "little") + bytes([enable]))
         self.own_commands += 1
 
     def _shorten_others(self):
         if not self.lead_other_links:
             return
         for handle in sorted(self.other_links):
-            self._packet_types(handle, self.SHORT_PACKETS)
+            self._priority(handle, 1)
             self.shortened.add(handle)
         if self.shortened:
-            self._note(f"other links limited to short packets: {len(self.shortened)}")
+            self._note(f"other links set high priority for the call: {len(self.shortened)}")
 
     def _restore_others(self):
         for handle in sorted(self.shortened & self.other_links):
-            self._packet_types(handle, self.ALL_PACKETS)
+            self._priority(handle, 0)
         self.shortened.clear()
 
     def voice_reply(self, packet):

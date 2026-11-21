@@ -333,23 +333,25 @@ class LinkRoleTests(unittest.TestCase):
         self.assertEqual(policy.from_host(self.accept(PHONE, 1)), ("forward", self.accept(PHONE, 1)))
         self.assertEqual(policy.from_host(self.accept(BUDS, 0)), ("forward", self.accept(BUDS, 0)))
 
-    def test_the_experiment_shortens_other_links_packets_for_the_call_and_hides_the_answers(self):
+    def complete(self, opcode, status=0):
+        return bytes([EVENT, 0x0E, 4, 1]) + opcode.to_bytes(2, "little") + bytes([status])
+
+    def test_the_headphone_link_is_set_high_priority_for_the_call_and_the_answers_are_hidden(self):
         policy = Policy(phone=PHONE, voice_accept=lambda a, t: ACCEPT, lead_other_links=True)
         policy.from_chip(bytes([EVENT, 0x03, 11, 0, 0x0D, 0x00]) + BUDS + bytes([1, 0]))
         policy.from_chip(request(PHONE, 2))
         policy.from_chip(status_for(0x043E))
         policy.from_chip(voice_open(PHONE, 0x20))
-        self.assertEqual(policy.outbox, [bytes([COMMAND, 0x0F, 0x04, 4, 0x0D, 0x00, 0x18, 0x3C])])
+        self.assertEqual(policy.outbox, [bytes([COMMAND, 0x57, 0xFC, 3, 0x0D, 0x00, 0x01])])
         policy.outbox.clear()
-        self.assertEqual(policy.from_chip(status_for(0x040F))[0], "drop")
-        self.assertEqual(policy.from_chip(bytes([EVENT, 0x1D, 5, 0, 0x0D, 0x00, 0x18, 0x3C]))[0], "drop")
+        self.assertEqual(policy.from_chip(self.complete(0xFC57))[0], "drop")
         policy.from_chip(closed(0x20))
-        self.assertEqual(policy.outbox, [bytes([COMMAND, 0x0F, 0x04, 4, 0x0D, 0x00, 0x18, 0xCC])])
-        self.assertEqual(policy.from_chip(status_for(0x040F))[0], "drop")
-        later = status_for(0x040F)
+        self.assertEqual(policy.outbox, [bytes([COMMAND, 0x57, 0xFC, 3, 0x0D, 0x00, 0x00])])
+        self.assertEqual(policy.from_chip(self.complete(0xFC57))[0], "drop")
+        later = self.complete(0xFC57)
         self.assertEqual(policy.from_chip(later), ("forward", later))
 
-    def test_without_the_experiment_no_packet_types_are_changed(self):
+    def test_without_the_experiment_no_priority_commands_are_sent(self):
         policy = voice_policy()
         policy.from_chip(bytes([EVENT, 0x03, 11, 0, 0x0D, 0x00]) + BUDS + bytes([1, 0]))
         policy.from_chip(request(PHONE, 2))

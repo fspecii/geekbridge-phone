@@ -284,3 +284,13 @@ What stands: with the phone's voice link routed to the host, this chip does not 
 For now a call plays on the Mac's own speakers, and the Mac's output is put back to the headphones when the call ends. `run_stage6.sh` takes the headphones' name as a fourth word and reconnects them after the daemon restart.
 
 Two script faults found and fixed on the way: a precautionary revert at the start of every run restarted the daemon a second time while the chip was still booting (status -19, nothing to open); and the app has to be started after the phone links, which the pass-through now does itself.
+
+### The likely fix: Broadcom high-priority connection (0xFC57), found by research 2026-11-22
+
+Research (sources in the commit history of this file's branch) found the specific cause and command:
+
+- These chips (bcm4377/4378/**4388**) starve an audio ACL link against reserved SCO traffic unless the link is flagged **high priority** with the Broadcom vendor command **0xFC57** ("high priority connection"): a 2-byte connection handle and a 1-byte enable flag. Asahi Linux sends it for exactly this family of chips ("ACL streams carrying audio must be set high priority ... or 10-second dropouts"), and Android's Broadcom BlueZ calls the same opcode `HCI_Write_High_Priority_Connection`.
+- macOS sends it at A2DP playback start. On this route it never does, because the chip shows as "Invalid chipset 0" and Apple's init is skipped. So the pass-through must send it itself.
+- It must be sent once the link is up and streaming, not during connect (the Linux patch author notes it times out during connect), and it is a link-level setting, not per packet — which matches the symptom exactly.
+
+So `GBP_HEADPHONES=1` now, instead of the three failed experiments, sends `0xFC57 <handle> 01` for the other classic links when the phone's voice link opens, and `0xFC57 <handle> 00` when it closes, hiding both answers from the daemon. The three earlier experiments (lead the other links, S4 voice timing, short packet types) are dropped. Not yet tested live.
