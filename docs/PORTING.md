@@ -1,5 +1,7 @@
 # Porting to Windows and macOS
 
+> **macOS: first port done** (`crates/phone-macos`, built with `scripts/package-macos.sh`). It lists paired phones and opens the MAP and PBAP services over IOBluetooth RFCOMM; calls use `IOBluetoothHandsFreeDevice`. Verified on a real Mac so far: building, launching, and listing paired phones. Not yet verified with a phone in range: message and contact sync, calls, and whether call voice follows the hands-free link. Pairing is done in System Settings. Notifications use `osascript` for now (no Answer/Decline buttons; answer in the window).
+
 `phone-obex` and `phone-core` have no OS dependencies and are tested on Windows and macOS in CI. A port is a new crate that implements `phone_core::platform::Platform`, plus an overlay presenter.
 
 ## The Platform trait
