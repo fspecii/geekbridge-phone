@@ -9,23 +9,20 @@ APP="dist/GeekBridge Phone.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 cp target/release/geekbridge-phone "$APP/Contents/MacOS/"
-# Mac voice mode helper: our code, the native bridge, a relocatable Python with the pinned packages,
-# and the licences. Run helper/macos-btd/build.sh and make-runtime.sh first.
-HELPER=helper/macos-btd
-if [ ! -x "$HELPER/build/python/bin/python3" ] || [ ! -f "$HELPER/build/libacipc_bridge.dylib" ]; then
-    echo "Run $HELPER/build.sh and $HELPER/make-runtime.sh first (native bridge and Python runtime)." >&2
-    exit 1
-fi
-DEST="$APP/Contents/Resources/helper/macos-btd"
-mkdir -p "$DEST/build"
-rsync -a --exclude __pycache__ "$HELPER/btd.py" "$HELPER/gbp_btd" "$DEST/"
-cp "$HELPER/build/libacipc_bridge.dylib" "$DEST/build/"
-rsync -a --exclude __pycache__ "$HELPER/build/python" "$DEST/"
-# Precompile now: the helper runs with -B and must not write into the signed bundle.
-"$DEST/python/bin/python3" -I -m compileall -q "$DEST/python/lib" "$DEST/gbp_btd" "$DEST/btd.py"
-"$DEST/python/bin/python3" -I "$HELPER/gen_licences.py" "$DEST/python/lib/python3.13/site-packages" \
-    "$APP/Contents/Resources/THIRD-PARTY-LICENSES.txt" \
-    "$HELPER/third_party/ai-caller/LICENSE" "$DEST/python/lib/python3.13/LICENSE.txt"
+# Mac voice mode is built into the app. Only the one-time root helper and its installer ship as files.
+mkdir -p "$APP/Contents/Resources/macos"
+cp packaging/macos/btmode packaging/macos/install-helper.sh "$APP/Contents/Resources/macos/"
+chmod 755 "$APP/Contents/Resources/macos/btmode" "$APP/Contents/Resources/macos/install-helper.sh"
+cat > "$APP/Contents/Resources/THIRD-PARTY-LICENSES.txt" <<LIC
+GeekBridge Phone (macOS) bundles code under these licences.
+
+== ai-caller native bridge (crates/phone-macos/native/ai-caller), MIT ==
+$(cat crates/phone-macos/native/ai-caller/LICENSE)
+
+== Rust dependencies ==
+Statically linked crates (cpal: Apache-2.0, and others) keep their own licences; run
+"cargo about" or "cargo license" in the source tree for the full list.
+LIC
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -55,21 +52,6 @@ ENTS
 IDENT="${SIGN_IDENTITY:--}"
 OPTS=""
 [ "$IDENT" != "-" ] && OPTS="--options runtime --timestamp"
-HELPER_ENT=$(mktemp)
-cat > "$HELPER_ENT" <<ENTS
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>com.apple.security.cs.disable-library-validation</key><true/>
-</dict></plist>
-ENTS
-find "$APP/Contents/Resources" -type f | while read -r f; do
-    if file -b "$f" | grep -q "Mach-O"; then
-        # shellcheck disable=SC2086
-        codesign --force --sign "$IDENT" $OPTS --entitlements "$HELPER_ENT" "$f"
-    fi
-done
-rm -f "$HELPER_ENT"
 # shellcheck disable=SC2086
 codesign --force --sign "$IDENT" $OPTS --entitlements "$ENT" "$APP"
 rm -f "$ENT"

@@ -59,7 +59,9 @@ extern "C" fn on_event(kind: c_int, a: c_float, b: c_float, text: *const c_char)
                 return;
             }
             // SAFETY: the panel passes a NUL-terminated string valid for this call.
-            let t = unsafe { CStr::from_ptr(text) }.to_string_lossy().into_owned();
+            let t = unsafe { CStr::from_ptr(text) }
+                .to_string_lossy()
+                .into_owned();
             let word = b != 0.0;
             let key = match t.as_str() {
                 "Backspace" if word => Key::BackspaceWord,
@@ -224,9 +226,7 @@ fn run(config: OverlayConfig, actions: Sender<Action>, events: Receiver<Msg>) {
     loop {
         let first = match app.timeout() {
             Some(t) => events.recv_timeout(t),
-            None => events
-                .recv()
-                .map_err(|_| RecvTimeoutError::Disconnected),
+            None => events.recv().map_err(|_| RecvTimeoutError::Disconnected),
         };
         match first {
             Ok(m) => {

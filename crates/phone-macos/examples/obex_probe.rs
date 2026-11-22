@@ -24,16 +24,31 @@ fn work() {
     let Some(ph) = p.phones().unwrap().into_iter().find(|x| x.apple) else {
         return println!("no Apple phone paired");
     };
-    println!("phone: {} (apple)", if ph.name.is_empty() { "?" } else { "paired" });
+    println!(
+        "phone: {} (apple)",
+        if ph.name.is_empty() { "?" } else { "paired" }
+    );
 
     match p.open_pbap(&ph.address) {
         Err(e) => println!("PBAP open: {e}"),
         Ok(s) => match PbapClient::connect(s) {
-            Err(e) => println!("PBAP connect: {e} (access denied: {})", e.is_access_denied()),
+            Err(e) => println!(
+                "PBAP connect: {e} (access denied: {})",
+                e.is_access_denied()
+            ),
             Ok(mut pbap) => {
-                for (n, b) in [("contacts", Book::Contacts), ("received", Book::Received), ("dialed", Book::Dialed), ("missed", Book::Missed)] {
+                for (n, b) in [
+                    ("contacts", Book::Contacts),
+                    ("received", Book::Received),
+                    ("dialed", Book::Dialed),
+                    ("missed", Book::Missed),
+                ] {
                     match pbap.pull(b, 500) {
-                        Ok(t) => println!("PBAP {n}: {} bytes, {} cards", t.len(), t.matches("BEGIN:VCARD").count()),
+                        Ok(t) => println!(
+                            "PBAP {n}: {} bytes, {} cards",
+                            t.len(),
+                            t.matches("BEGIN:VCARD").count()
+                        ),
                         Err(e) => println!("PBAP {n}: failed: {e}"),
                     }
                 }
@@ -50,7 +65,10 @@ fn work() {
             },
         },
     }
-    println!("calls: {:?}", p.calls(&ph.address).map_err(|e| e.to_string()));
+    println!(
+        "calls: {:?}",
+        p.calls(&ph.address).map_err(|e| e.to_string())
+    );
 }
 #[cfg(not(target_os = "macos"))]
 fn main() {}

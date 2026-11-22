@@ -181,7 +181,9 @@ extern "C" fn code_trampoline(user: *mut std::ffi::c_void, code: *const c_char) 
     // SAFETY: `user` is the `ShowCode` that `pair` keeps alive for the whole blocking call, and
     // `code` is a NUL-terminated string valid for this call.
     let show = unsafe { &*(user as *const ShowCode) };
-    let code = unsafe { CStr::from_ptr(code) }.to_string_lossy().into_owned();
+    let code = unsafe { CStr::from_ptr(code) }
+        .to_string_lossy()
+        .into_owned();
     show(Some(code));
 }
 

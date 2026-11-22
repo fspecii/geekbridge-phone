@@ -606,8 +606,8 @@ impl eframe::App for App {
                                 ui,
                                 &pal,
                                 crate::ui::widgets::Tone::Info,
-                                "Mac voice mode is on",
-                                "Bluetooth on this Mac is off, so keyboards, mice and headphones are disconnected. It comes back when you quit the app. Closing the window only hides it.",
+                                "Mac voice mode is on (experimental)",
+                                "Calls can be answered here, with their sound through this Mac. Your mouse, keyboard and headphones stay connected. Quitting the app puts Bluetooth back on its normal path.",
                                 Some("Quit app"),
                                 false,
                             );
@@ -668,7 +668,8 @@ impl eframe::App for App {
                 Cmd::OpenGuide => self.guide.open_manually(),
                 Cmd::OpenPairing => self.pairing.open(&self.platform, ctx),
                 Cmd::RemovePhone(address, name) => {
-                    self.pairing.start_unpair(&self.platform, ctx, address, name)
+                    self.pairing
+                        .start_unpair(&self.platform, ctx, address, name)
                 }
                 Cmd::Quit => self.quit(ctx),
             }

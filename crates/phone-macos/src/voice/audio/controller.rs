@@ -26,7 +26,11 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 impl CallAudioController {
     /// Listens to the helper's call events. The returned controller stays valid for as long as
     /// the client does.
-    pub fn attach(client: &HelperClient, voice_socket: PathBuf, device: Arc<dyn AudioDevice>) -> Self {
+    pub fn attach(
+        client: &HelperClient,
+        voice_socket: PathBuf,
+        device: Arc<dyn AudioDevice>,
+    ) -> Self {
         let slot = Arc::new(Mutex::new(Slot::default()));
         let shared = slot.clone();
         client.subscribe(move |event| {
@@ -37,7 +41,8 @@ impl CallAudioController {
             match state {
                 "active" => {
                     lock(&shared).wanted = true;
-                    let (shared, path, device) = (shared.clone(), voice_socket.clone(), device.clone());
+                    let (shared, path, device) =
+                        (shared.clone(), voice_socket.clone(), device.clone());
                     std::thread::spawn(move || {
                         let mut slot = lock(&shared);
                         if !slot.wanted || slot.audio.is_some() {
@@ -105,13 +110,24 @@ mod tests {
     use std::sync::atomic::Ordering;
     use std::time::Duration;
 
-    fn setup(tag: &str, fail: bool) -> (FakeHelper, HelperClient, CallAudioController, Arc<FakeDevice>, UnixListener) {
+    fn setup(
+        tag: &str,
+        fail: bool,
+    ) -> (
+        FakeHelper,
+        HelperClient,
+        CallAudioController,
+        Arc<FakeDevice>,
+        UnixListener,
+    ) {
         let path = PathBuf::from(format!("/tmp/gbc{}{}", std::process::id(), tag));
         let _ = std::fs::remove_file(&path);
         let listener = UnixListener::bind(&path).unwrap();
         let helper = FakeHelper::start(Arc::new(|_| Some((json!({"ok": true}), None))));
         let client = HelperClient::connect(helper.socket()).unwrap();
-        client.request("status", json!({}), Duration::from_secs(5)).unwrap(); // the fake has accepted us
+        client
+            .request("status", json!({}), Duration::from_secs(5))
+            .unwrap(); // the fake has accepted us
         let mut device = FakeDevice::new(16000, true);
         device.fail = fail;
         let device = Arc::new(device);
@@ -128,12 +144,16 @@ mod tests {
         let (helper, _client, controller, device, _l) = setup("a", false);
         state(&helper, "incoming");
         std::thread::sleep(Duration::from_millis(150));
-        assert!(!controller.is_running(), "ringing does not open the microphone");
+        assert!(
+            !controller.is_running(),
+            "ringing does not open the microphone"
+        );
         state(&helper, "active");
         assert!(until(Duration::from_secs(3), || controller.is_running()));
         assert_eq!(device.started.load(Ordering::SeqCst), 1);
         state(&helper, "ended");
-        assert!(until(Duration::from_secs(3), || !controller.is_running() && device.stopped.load(Ordering::SeqCst) == 1));
+        assert!(until(Duration::from_secs(3), || !controller.is_running()
+            && device.stopped.load(Ordering::SeqCst) == 1));
     }
 
     #[test]
@@ -151,7 +171,9 @@ mod tests {
     fn a_device_failure_is_kept_for_the_user_and_the_next_call_tries_again() {
         let (helper, _client, controller, _device, _l) = setup("c", true);
         state(&helper, "active");
-        assert!(until(Duration::from_secs(3), || controller.last_error().is_some()));
+        assert!(until(Duration::from_secs(3), || controller
+            .last_error()
+            .is_some()));
         assert!(!controller.is_running());
     }
 
@@ -163,7 +185,10 @@ mod tests {
         std::thread::sleep(Duration::from_millis(500));
         let started = device.started.load(Ordering::SeqCst);
         let stopped = device.stopped.load(Ordering::SeqCst);
-        assert!(!controller.is_running(), "started {started} stopped {stopped}");
+        assert!(
+            !controller.is_running(),
+            "started {started} stopped {stopped}"
+        );
         assert_eq!(started, stopped);
     }
 

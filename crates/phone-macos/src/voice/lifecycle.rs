@@ -37,17 +37,29 @@ impl SystemPower {
     fn symbols() -> Option<(GetFn, SetFn)> {
         // SAFETY: dlopen/dlsym on a system framework; the two functions have these signatures.
         unsafe {
-            let path = std::ffi::CString::new("/System/Library/Frameworks/IOBluetooth.framework/IOBluetooth").ok()?;
+            let path = std::ffi::CString::new(
+                "/System/Library/Frameworks/IOBluetooth.framework/IOBluetooth",
+            )
+            .ok()?;
             let handle = libc::dlopen(path.as_ptr(), libc::RTLD_NOW);
             if handle.is_null() {
                 return None;
             }
-            let get = libc::dlsym(handle, c"IOBluetoothPreferenceGetControllerPowerState".as_ptr());
-            let set = libc::dlsym(handle, c"IOBluetoothPreferenceSetControllerPowerState".as_ptr());
+            let get = libc::dlsym(
+                handle,
+                c"IOBluetoothPreferenceGetControllerPowerState".as_ptr(),
+            );
+            let set = libc::dlsym(
+                handle,
+                c"IOBluetoothPreferenceSetControllerPowerState".as_ptr(),
+            );
             if get.is_null() || set.is_null() {
                 return None;
             }
-            Some((std::mem::transmute::<*mut libc::c_void, GetFn>(get), std::mem::transmute::<*mut libc::c_void, SetFn>(set)))
+            Some((
+                std::mem::transmute::<*mut libc::c_void, GetFn>(get),
+                std::mem::transmute::<*mut libc::c_void, SetFn>(set),
+            ))
         }
     }
 }
@@ -145,7 +157,8 @@ pub fn recover_on_start(marker: &Path, power: &dyn Power) -> bool {
 
 fn pid_alive(pid: i32) -> bool {
     // SAFETY: signal 0 only checks that the process exists.
-    unsafe { libc::kill(pid, 0) == 0 || *libc::__error() == libc::EPERM }
+    let alive = unsafe { libc::kill(pid, 0) } == 0;
+    alive || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
 /// The guard process: waits for the app to go, then restores Bluetooth if the marker is still
@@ -181,7 +194,8 @@ pub struct VoiceMode {
 
 fn start_helper(config: &VoiceModeConfig) -> Result<(Child, Arc<HelperClient>), String> {
     fs::create_dir_all(&config.dir).map_err(|e| e.to_string())?;
-    fs::set_permissions(&config.dir, fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
+    fs::set_permissions(&config.dir, fs::Permissions::from_mode(0o700))
+        .map_err(|e| e.to_string())?;
     let mut command = Command::new(&config.python);
     command
         .arg("-I")
@@ -198,7 +212,9 @@ fn start_helper(config: &VoiceModeConfig) -> Result<(Child, Arc<HelperClient>), 
     if let Some(parent) = config.helper_script.parent() {
         command.current_dir(parent);
     }
-    let mut child = command.spawn().map_err(|e| format!("could not start the Bluetooth helper: {e}"))?;
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("could not start the Bluetooth helper: {e}"))?;
     let socket = config.dir.join("btd.sock");
     let end = Instant::now() + HELPER_START;
     loop {
@@ -208,7 +224,9 @@ fn start_helper(config: &VoiceModeConfig) -> Result<(Child, Arc<HelperClient>), 
         if socket.exists() {
             if let Ok(client) = HelperClient::connect(&socket) {
                 match client.request("hello", json!({}), Duration::from_secs(10)) {
-                    Ok(reply) if reply.fields["protocol"] == json!(HELPER_PROTOCOL) => return Ok((child, Arc::new(client))),
+                    Ok(reply) if reply.fields["protocol"] == json!(HELPER_PROTOCOL) => {
+                        return Ok((child, Arc::new(client)))
+                    }
                     Ok(reply) => {
                         let _ = child.kill();
                         let _ = child.wait();
@@ -239,8 +257,11 @@ impl VoiceMode {
     /// Bluetooth is restored before the error returns.
     pub fn enable(config: VoiceModeConfig) -> Result<Self, VoiceModeError> {
         recover_on_start(&config.marker, config.power.as_ref());
-        let restore_on = config.power.is_on().ok_or_else(|| VoiceModeError::Start("Bluetooth is not available on this Mac.".into()))?;
-        write_marker(&config.marker, restore_on).map_err(|e| VoiceModeError::Start(e.to_string()))?;
+        let restore_on = config.power.is_on().ok_or_else(|| {
+            VoiceModeError::Start("Bluetooth is not available on this Mac.".into())
+        })?;
+        write_marker(&config.marker, restore_on)
+            .map_err(|e| VoiceModeError::Start(e.to_string()))?;
         let guard = config.guard.as_ref().and_then(|cmd| {
             let (program, args) = cmd.split_first()?;
             Command::new(program)
@@ -274,10 +295,9 @@ impl VoiceMode {
         match start_helper(&config) {
             Ok((helper, client)) => {
                 let platform = Arc::new(VoiceModePlatform::new(client.clone()));
-                let audio = config
-                    .audio
-                    .clone()
-                    .map(|device| CallAudioController::attach(&client, config.dir.join("voice.sock"), device));
+                let audio = config.audio.clone().map(|device| {
+                    CallAudioController::attach(&client, config.dir.join("voice.sock"), device)
+                });
                 Ok(Self {
                     audio,
                     config,
@@ -304,7 +324,12 @@ impl VoiceMode {
 
     /// True while the helper is running.
     pub fn is_running(&mut self) -> bool {
-        !self.stopped && !self.client.is_closed() && self.helper.as_mut().is_some_and(|h| matches!(h.try_wait(), Ok(None)))
+        !self.stopped
+            && !self.client.is_closed()
+            && self
+                .helper
+                .as_mut()
+                .is_some_and(|h| matches!(h.try_wait(), Ok(None)))
     }
 
     /// Stops the helper, switches Bluetooth back on and removes the marker. Safe to call twice.
@@ -316,7 +341,9 @@ impl VoiceMode {
         if let Some(audio) = &self.audio {
             audio.stop();
         }
-        let _ = self.client.request("shutdown", json!({}), Duration::from_secs(5));
+        let _ = self
+            .client
+            .request("shutdown", json!({}), Duration::from_secs(5));
         self.client.close();
         if let Some(mut helper) = self.helper.take() {
             let end = Instant::now() + Duration::from_secs(10);
@@ -403,7 +430,12 @@ mod tests {
                 helper_script: root().join("btd.py"),
                 dir: base.join("d"),
                 marker: base.join("marker"),
-                extra_args: vec!["--stack".into(), "simulated".into(), "--grace".into(), "5".into()],
+                extra_args: vec![
+                    "--stack".into(),
+                    "simulated".into(),
+                    "--grace".into(),
+                    "5".into(),
+                ],
                 env: vec![],
                 guard: None,
                 power,
@@ -422,7 +454,10 @@ mod tests {
         assert!(recover_on_start(&marker, power.as_ref()));
         assert_eq!(power.is_on(), Some(true));
         assert!(!marker.exists());
-        assert!(!recover_on_start(&marker, power.as_ref()), "nothing to do the second time");
+        assert!(
+            !recover_on_start(&marker, power.as_ref()),
+            "nothing to do the second time"
+        );
     }
 
     #[test]
@@ -450,7 +485,12 @@ mod tests {
         assert_eq!(power.is_on(), Some(true));
         assert!(!marker.exists());
         // With the marker gone, the guard returns even though the "app" is alive.
-        run_guard(std::process::id() as i32, &marker, power.as_ref(), Duration::from_millis(20));
+        run_guard(
+            std::process::id() as i32,
+            &marker,
+            power.as_ref(),
+            Duration::from_millis(20),
+        );
     }
 
     #[test]
@@ -461,9 +501,20 @@ mod tests {
         write_marker(&marker, true).unwrap();
         let m = marker.clone();
         let p = power.clone();
-        let handle = std::thread::spawn(move || run_guard(std::process::id() as i32, &m, p.as_ref(), Duration::from_millis(20)));
+        let handle = std::thread::spawn(move || {
+            run_guard(
+                std::process::id() as i32,
+                &m,
+                p.as_ref(),
+                Duration::from_millis(20),
+            )
+        });
         std::thread::sleep(Duration::from_millis(200));
-        assert_eq!(power.is_on(), Some(false), "nothing is touched while the app lives");
+        assert_eq!(
+            power.is_on(),
+            Some(false),
+            "nothing is touched while the app lives"
+        );
         fs::remove_file(&marker).unwrap();
         handle.join().unwrap();
         assert_eq!(power.is_on(), Some(false));
@@ -515,7 +566,12 @@ mod tests {
         let end = Instant::now() + Duration::from_secs(10);
         let mut seen = false;
         while Instant::now() < end {
-            if platform.calls(&address).unwrap().iter().any(|c| c.state.is_ringing()) {
+            if platform
+                .calls(&address)
+                .unwrap()
+                .iter()
+                .any(|c| c.state.is_ringing())
+            {
                 seen = true;
                 break;
             }
@@ -558,10 +614,19 @@ mod tests {
         use phone_core::platform::Platform;
         let address = platform.phones().unwrap()[0].address.clone();
         let end = Instant::now() + Duration::from_secs(10);
-        while Instant::now() < end && !platform.calls(&address).unwrap().iter().any(|c| c.state.is_ringing()) {
+        while Instant::now() < end
+            && !platform
+                .calls(&address)
+                .unwrap()
+                .iter()
+                .any(|c| c.state.is_ringing())
+        {
             std::thread::sleep(Duration::from_millis(100));
         }
-        assert!(mode.audio().unwrap().stats().is_none(), "no audio while it only rings");
+        assert!(
+            mode.audio().unwrap().stats().is_none(),
+            "no audio while it only rings"
+        );
         platform.answer(&address, "call-1").unwrap();
         let audio = mode.audio().unwrap().clone();
         let end = Instant::now() + Duration::from_secs(10);
@@ -569,7 +634,10 @@ mod tests {
             std::thread::sleep(Duration::from_millis(50));
         }
         let stats = audio.stats().expect("audio running during the call");
-        assert!(stats.down_frames >= 5, "phone audio reached the Mac: {stats:?}");
+        assert!(
+            stats.down_frames >= 5,
+            "phone audio reached the Mac: {stats:?}"
+        );
         for _ in 0..10 {
             device.mic(&[500; 160]); // 10 ms at 16 kHz
         }
@@ -577,7 +645,10 @@ mod tests {
         while Instant::now() < end && audio.stats().map(|s| s.up_frames).unwrap_or(0) < 3 {
             std::thread::sleep(Duration::from_millis(50));
         }
-        assert!(audio.stats().unwrap().up_frames >= 3, "microphone audio left the Mac");
+        assert!(
+            audio.stats().unwrap().up_frames >= 3,
+            "microphone audio left the Mac"
+        );
         platform.hang_up(&address, "call-1").unwrap();
         let end = Instant::now() + Duration::from_secs(5);
         while Instant::now() < end && audio.is_running() {
@@ -611,7 +682,10 @@ mod tests {
         let codes = Arc::new(Mutex::new(Vec::new()));
         let seen = codes.clone();
         platform
-            .pair(&found[0].id, Arc::new(move |code| seen.lock().unwrap().push(code)))
+            .pair(
+                &found[0].id,
+                Arc::new(move |code| seen.lock().unwrap().push(code)),
+            )
             .unwrap();
         assert_eq!(*codes.lock().unwrap(), vec![Some("123456".to_string())]);
         // The new phone is listed and selected without a restart.

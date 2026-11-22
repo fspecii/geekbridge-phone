@@ -39,8 +39,13 @@ impl MacosPlatform {
     /// pairing has gone stale makes it show pairing prompts.
     fn may_connect(&self, address: &str) -> Result<()> {
         let phones = parse_phones(&ffi::paired());
-        match phones.iter().find(|p| p.address.eq_ignore_ascii_case(address)) {
-            None => Err(PlatformError::Other("that phone is not paired with this Mac".into())),
+        match phones
+            .iter()
+            .find(|p| p.address.eq_ignore_ascii_case(address))
+        {
+            None => Err(PlatformError::Other(
+                "that phone is not paired with this Mac".into(),
+            )),
             Some(p) if p.apple && !p.connected => Err(PlatformError::Other(
                 "connect this Apple device in System Settings > Bluetooth first".into(),
             )),

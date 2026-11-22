@@ -6,6 +6,8 @@
 //! client, and runs the hands-free unit role for calls. Pairing is done in System Settings.
 
 #[cfg(unix)]
+pub mod passthrough;
+#[cfg(unix)]
 pub mod voice;
 
 #[cfg(target_os = "macos")]
@@ -15,6 +17,14 @@ mod platform;
 
 #[cfg(target_os = "macos")]
 pub use platform::MacosPlatform;
+
+/// The paired devices as text (`ADDRESS \t NAME \t CONNECTED \t CLASS` per line). The app asks
+/// a short-lived copy of itself for this before it starts the pass-through, so that its own
+/// process does not talk to the Bluetooth daemon until the daemon has been restarted.
+#[cfg(target_os = "macos")]
+pub fn paired_devices_text() -> String {
+    ffi::paired()
+}
 
 /// Parses the line format `gbp_paired` writes (`ADDRESS \t NAME \t CONNECTED \t CLASS`).
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]

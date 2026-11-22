@@ -28,10 +28,10 @@ pub mod model;
 pub mod notify;
 #[cfg(target_os = "linux")]
 pub mod notify_freedesktop;
-#[cfg(target_os = "windows")]
-mod notify_windows;
 #[cfg(target_os = "macos")]
 mod notify_macos;
+#[cfg(target_os = "windows")]
+mod notify_windows;
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 pub mod overlay_notifier;
 pub mod platform_ui;

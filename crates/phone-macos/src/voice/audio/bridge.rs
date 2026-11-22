@@ -33,7 +33,11 @@ pub trait Running: Send {}
 pub trait AudioDevice: Send + Sync {
     /// Starts capture and playback. Returns the device's sample rate, whether it cancels echo,
     /// and the running handle.
-    fn start(&self, capture: CaptureFn, render: RenderFn) -> Result<(u32, bool, Box<dyn Running>), String>;
+    fn start(
+        &self,
+        capture: CaptureFn,
+        render: RenderFn,
+    ) -> Result<(u32, bool, Box<dyn Running>), String>;
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -81,8 +85,11 @@ fn frame(kind: u8, sequence: u32, payload: &[u8]) -> Vec<u8> {
 
 impl CallAudio {
     pub fn start(voice_socket: &Path, device: &dyn AudioDevice) -> Result<Self, String> {
-        let socket = UnixStream::connect(voice_socket).map_err(|e| format!("cannot open the voice socket: {e}"))?;
-        socket.set_read_timeout(Some(Duration::from_millis(200))).map_err(|e| e.to_string())?;
+        let socket = UnixStream::connect(voice_socket)
+            .map_err(|e| format!("cannot open the voice socket: {e}"))?;
+        socket
+            .set_read_timeout(Some(Duration::from_millis(200)))
+            .map_err(|e| e.to_string())?;
         let stop = Arc::new(AtomicBool::new(false));
         let counters = Arc::new(Counters::default());
         // The ring is created before the device so its rate is known: start with 8 kHz, then
@@ -139,12 +146,25 @@ impl CallAudio {
                     match socket.read(&mut chunk) {
                         Ok(0) => break,
                         Ok(n) => buffer.extend_from_slice(&chunk[..n]),
-                        Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut | ErrorKind::Interrupted) => continue,
+                        Err(e)
+                            if matches!(
+                                e.kind(),
+                                ErrorKind::WouldBlock
+                                    | ErrorKind::TimedOut
+                                    | ErrorKind::Interrupted
+                            ) =>
+                        {
+                            continue
+                        }
                         Err(_) => break,
                     }
                     while buffer.len() >= HEADER {
                         let length = u16::from_be_bytes([buffer[2], buffer[3]]) as usize;
-                        if buffer[0] != MAGIC || length > 512 || length % 2 == 1 || !matches!(buffer[1], DOWN | UP) {
+                        if buffer[0] != MAGIC
+                            || length > 512
+                            || length % 2 == 1
+                            || !matches!(buffer[1], DOWN | UP)
+                        {
                             return; // cannot resynchronise; the call carries on without sound
                         }
                         if buffer.len() < HEADER + length {
@@ -152,8 +172,10 @@ impl CallAudio {
                         }
                         if buffer[1] == DOWN {
                             let samples: Vec<i16> = buffer[HEADER..HEADER + length]
-                                .chunks_exact(2)
-                                .map(|b| i16::from_le_bytes([b[0], b[1]]))
+                                .as_chunks::<2>()
+                                .0
+                                .iter()
+                                .map(|b| i16::from_le_bytes(*b))
                                 .collect();
                             let mut out = Vec::with_capacity(samples.len() * 6);
                             up_sampler.process(&samples, &mut out);
@@ -177,7 +199,8 @@ impl CallAudio {
                     match rx.recv_timeout(Duration::from_millis(100)) {
                         Ok(samples) => {
                             sequence = sequence.wrapping_add(1);
-                            let payload: Vec<u8> = samples.iter().flat_map(|s| s.to_le_bytes()).collect();
+                            let payload: Vec<u8> =
+                                samples.iter().flat_map(|s| s.to_le_bytes()).collect();
                             if socket.write_all(&frame(UP, sequence, &payload)).is_err() {
                                 break;
                             }
@@ -295,7 +318,11 @@ pub(crate) mod fake {
     }
 
     impl AudioDevice for FakeDevice {
-        fn start(&self, capture: CaptureFn, render: RenderFn) -> Result<(u32, bool, Box<dyn Running>), String> {
+        fn start(
+            &self,
+            capture: CaptureFn,
+            render: RenderFn,
+        ) -> Result<(u32, bool, Box<dyn Running>), String> {
             if self.fail {
                 return Err("no audio unit".into());
             }
@@ -345,7 +372,10 @@ mod tests {
         }
         assert!(until(Duration::from_secs(2), || audio.stats().down_frames == 6));
         let played = device.speaker(1600); // 100 ms at 16 kHz
-        assert!(played.iter().filter(|&&s| s == 4000).count() >= 1400, "most of 90 ms of audio is played");
+        assert!(
+            played.iter().filter(|&&s| s == 4000).count() >= 1400,
+            "most of 90 ms of audio is played"
+        );
         assert!(audio.stats().echo_cancelled);
         assert_eq!(audio.stats().device_rate, 16000);
     }
@@ -385,7 +415,11 @@ mod tests {
         device.speaker(240); // loud audio is playing
         device.mic(&[100; 120]);
         std::thread::sleep(Duration::from_millis(200));
-        assert_eq!(audio.stats().up_frames, 0, "the microphone is gated while the caller is loud");
+        assert_eq!(
+            audio.stats().up_frames,
+            0,
+            "the microphone is gated while the caller is loud"
+        );
         device.speaker(2000); // the rest plays out
         device.speaker(100); // and the speaker is quiet
         device.mic(&[100; 120]);
@@ -419,7 +453,11 @@ mod tests {
     fn a_missing_voice_socket_is_an_error() {
         let device = FakeDevice::new(16000, true);
         assert!(CallAudio::start(Path::new("/tmp/gba-none"), &device).is_err());
-        assert_eq!(device.started.load(Ordering::SeqCst), 0, "the device is not started without a socket");
+        assert_eq!(
+            device.started.load(Ordering::SeqCst),
+            0,
+            "the device is not started without a socket"
+        );
     }
 
     #[test]
@@ -450,7 +488,10 @@ mod tests {
         let device = FakeDevice::new(8000, true);
         let audio = CallAudio::start(&path, &device).unwrap();
         let (mut peer, _) = l.accept().unwrap();
-        let payload: Vec<u8> = [2000i16; 120].iter().flat_map(|s| s.to_le_bytes()).collect();
+        let payload: Vec<u8> = [2000i16; 120]
+            .iter()
+            .flat_map(|s| s.to_le_bytes())
+            .collect();
         let whole = frame(DOWN, 1, &payload);
         peer.write_all(&whole[..5]).unwrap();
         std::thread::sleep(Duration::from_millis(50));

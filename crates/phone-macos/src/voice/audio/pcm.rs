@@ -15,7 +15,12 @@ pub struct Resampler {
 
 impl Resampler {
     pub fn new(from: u32, to: u32) -> Self {
-        Self { step: from as f64 / to as f64, pos: 0.0, last: 0, primed: false }
+        Self {
+            step: from as f64 / to as f64,
+            pos: 0.0,
+            last: 0,
+            primed: false,
+        }
     }
 
     pub fn process(&mut self, input: &[i16], out: &mut Vec<i16>) {
@@ -51,6 +56,8 @@ pub struct PlaybackRing {
     pub dropped: u64,
     pub underruns: u64,
     pub last_loud: bool,
+    /// Set when the sound goes out of loudspeakers: the microphone would hear it.
+    pub echo_risk: bool,
 }
 
 impl PlaybackRing {
@@ -63,6 +70,7 @@ impl PlaybackRing {
             dropped: 0,
             underruns: 0,
             last_loud: false,
+            echo_risk: false,
         }
     }
 
@@ -101,6 +109,10 @@ impl PlaybackRing {
     pub fn len(&self) -> usize {
         self.samples.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.samples.is_empty()
+    }
 }
 
 #[cfg(test)]
@@ -117,7 +129,10 @@ mod tests {
         let mut out = Vec::new();
         r.process(&ramp(80), &mut out);
         assert_eq!(out.len(), 160);
-        assert!(out.windows(2).all(|w| w[1] >= w[0]), "a rising ramp stays rising");
+        assert!(
+            out.windows(2).all(|w| w[1] >= w[0]),
+            "a rising ramp stays rising"
+        );
     }
 
     #[test]
@@ -131,7 +146,13 @@ mod tests {
     #[test]
     fn chunking_does_not_change_the_result() {
         let input = ramp(480);
-        for (from, to) in [(8000, 16000), (16000, 8000), (8000, 24000), (48000, 8000), (8000, 8000)] {
+        for (from, to) in [
+            (8000, 16000),
+            (16000, 8000),
+            (8000, 24000),
+            (48000, 8000),
+            (8000, 8000),
+        ] {
             let mut whole = Vec::new();
             Resampler::new(from, to).process(&input, &mut whole);
             let mut parts = Vec::new();
@@ -167,7 +188,10 @@ mod tests {
         ring.push(&[7; 100]);
         let mut out = [1i16; 50];
         ring.pull(&mut out);
-        assert!(out.iter().all(|&s| s == 0), "silence until enough is queued");
+        assert!(
+            out.iter().all(|&s| s == 0),
+            "silence until enough is queued"
+        );
         ring.push(&[9; 100]);
         ring.pull(&mut out);
         assert_eq!(&out[..], &[7; 50][..]);
@@ -195,7 +219,10 @@ mod tests {
         assert_eq!(out[80], 0);
         ring.push(&[5; 20]);
         ring.pull(&mut out[..20]);
-        assert!(out[..20].iter().all(|&s| s == 0), "not restarted until the prefill is back");
+        assert!(
+            out[..20].iter().all(|&s| s == 0),
+            "not restarted until the prefill is back"
+        );
     }
 
     #[test]

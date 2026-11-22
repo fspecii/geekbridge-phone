@@ -6,7 +6,7 @@
 #   ./run_stage6.sh <seconds> "<phone>" sound   6c: the same, with the call's sound on the Mac's input and output
 #   ./run_stage6.sh <seconds> "<phone>" sound "<headphones>"   also reconnect those headphones
 #
-# With the helper installed (sudo ./install-helper.sh, once) it asks for no password and may run
+# With the helper installed (sudo packaging/macos/install-helper.sh, once) it asks for no password and may run
 # for up to twelve hours; without it, it asks once and runs for up to ten minutes. While it
 # runs, use the mouse and headphones as usual. Everything is put back when it ends, by a timer
 # if it does not end properly, and by a reboot in any case.
@@ -43,7 +43,7 @@ if [ -x "$HELPER" ] && sudo -n "$HELPER" status >/dev/null 2>&1; then
     fi
 else
     if [ "$TOTAL" -gt 600 ]; then
-        echo "runs over 600 seconds need the helper: sudo ./install-helper.sh (once)" >&2
+        echo "runs over 600 seconds need the helper: sudo packaging/macos/install-helper.sh (once)" >&2
         rm -f "$PORT_FILE"
         exit 64
     fi

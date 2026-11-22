@@ -8,6 +8,5 @@ pub mod pcm;
 #[cfg(target_os = "macos")]
 pub mod vpio;
 
-
 pub use bridge::{AudioDevice, AudioStats, CallAudio};
 pub use controller::CallAudioController;

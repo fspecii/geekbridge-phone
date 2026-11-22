@@ -173,12 +173,18 @@ impl SettingsState {
                 toggle_row(
                     ui,
                     &pal,
-                    "Mac voice mode",
-                    "Talk through this Mac's speakers and microphone. Bluetooth on this Mac is switched off while it is on, so keyboards, mice and headphones disconnect. Takes effect the next time the app starts.",
+                    "Mac voice mode (experimental)",
+                    "Answer calls on this Mac, with their sound through its speakers or Bluetooth headphones and its microphone. Your mouse, keyboard and headphones stay connected. Needs an Android phone and a one-time administrator approval. Takes effect the next time the app starts.",
                     &mut s.mac_voice_mode,
                 );
                 if let Some(note) = crate::boot::voice_mode_note() {
-                    ui.add(egui::Label::new(theme::caption(&pal, &format!("Voice mode did not start: {note}"))).wrap());
+                    ui.add(
+                        egui::Label::new(theme::caption(
+                            &pal,
+                            format!("Voice mode did not start: {note}"),
+                        ))
+                        .wrap(),
+                    );
                 }
             }
             ui.add_space(S2);
@@ -399,7 +405,7 @@ impl SettingsState {
                 ui,
                 &pal,
                 "Keep running when the window is closed",
-                "Closing minimises the window so calls and texts still arrive. Quit with Ctrl+Q. In Mac voice mode, Bluetooth on this Mac stays off until you quit.",
+                "Closing minimises the window so calls and texts still arrive. Quit with Ctrl+Q. Mac voice mode runs until you quit.",
                 &mut s.keep_running_in_tray,
             );
             widgets::card_divider(ui, &pal);

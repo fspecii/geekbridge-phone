@@ -20,12 +20,24 @@ fn work() {
     let phones = p.phones().expect("phones");
     println!("{} phone(s)", phones.len());
     for ph in &phones {
-        println!("- {} {} connected={} apple={}", ph.address, ph.name, ph.connected, ph.apple);
+        println!(
+            "- {} {} connected={} apple={}",
+            ph.address, ph.name, ph.connected, ph.apple
+        );
         if ph.name.contains("iPhone") || ph.connected {
-            for (what, r) in [("MAP", p.open_map(&ph.address)), ("PBAP", p.open_pbap(&ph.address))] {
-                println!("  {what}: {}", r.map(|_| "opened".into()).unwrap_or_else(|e| e.to_string()));
+            for (what, r) in [
+                ("MAP", p.open_map(&ph.address)),
+                ("PBAP", p.open_pbap(&ph.address)),
+            ] {
+                println!(
+                    "  {what}: {}",
+                    r.map(|_| "opened".into()).unwrap_or_else(|e| e.to_string())
+                );
             }
-            println!("  calls: {:?}", p.calls(&ph.address).map_err(|e| e.to_string()));
+            println!(
+                "  calls: {:?}",
+                p.calls(&ph.address).map_err(|e| e.to_string())
+            );
         }
     }
     std::process::exit(0);

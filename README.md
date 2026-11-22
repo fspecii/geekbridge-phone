@@ -6,7 +6,7 @@
 
 On a Mac with an iPhone, a call rings on the screen and you answer it right there. Texts arrive as banners you can reply to. That should not depend on which brand of phone is in your pocket or which operating system is on your desk.
 
-GeekBridge Phone brings that to **Android and iPhone, on Linux and Windows today, with macOS next**. A call or text appears in the top-right corner of your screen like a native notification: answer or decline the call, read the text, reply on the spot. It uses only the Bluetooth features every phone already has, the same ones a car uses. Nothing is installed on the phone, and nothing leaves the link between your phone and your computer.
+GeekBridge Phone brings that to **Android and iPhone, on Linux and Windows today, with an experimental macOS build in early development**. A call or text appears in the top-right corner of your screen like a native notification: answer or decline the call, read the text, reply on the spot. It uses only the Bluetooth features every phone already has, the same ones a car uses. Nothing is installed on the phone, and nothing leaves the link between your phone and your computer.
 
 <p align="center">
   <img src="docs/img/app-messages-dark.png" width="420" alt="Messages, dark: conversations and an iMessage-style thread">
@@ -26,14 +26,16 @@ Phones and computers should work together whatever you buy. Today the smooth exp
 So that is the goal:
 
 - **Any phone.** Android and iPhone, the same app, the same banners.
-- **Any computer.** Linux and Windows now, calls with their voice on both; macOS is the last one left.
+- **Any computer.** Linux and Windows now, calls with their voice on both; macOS is in early, experimental form.
 - **Your data stays yours.** No account, no server, no telemetry. It all stays on your Bluetooth link and your disk.
 - **Nothing to install on the phone.** The phone already thinks your computer is a car.
 - **Open and small.** GPL-licensed, written in Rust, one lightweight program.
 
 It looks the way we think a phone companion should: macOS-style banners and dot-matrix type (true black or warm off-white, one red accent), in both light and dark.
 
-> **Status: 0.1.x, Linux and Windows.** Verified on real hardware: a Samsung Galaxy Z Fold5 (Android 17) and an iPhone on Linux, and the same two phones on Windows 11 (pairing from the app, texts, contacts, calls with the voice through the computer; see [docs/WINDOWS.md](docs/WINDOWS.md)). On both, the call voice comes through the computer's speakers and microphone. The OS-independent core also passes its tests on macOS in CI; **macOS is the only platform still to port** ([docs/PORTING.md](docs/PORTING.md)).
+> **macOS is early-stage and experimental.** Calls with sound work on one tested Mac, but the macOS build depends on private Apple interfaces, has had very little testing, and will have rough edges. **Contributions are open and very welcome**: see [macOS](#macos-experimental) below and [CONTRIBUTING.md](CONTRIBUTING.md).
+
+> **Status: 0.1.x, Linux and Windows.** Verified on real hardware: a Samsung Galaxy Z Fold5 (Android 17) and an iPhone on Linux, and the same two phones on Windows 11 (pairing from the app, texts, contacts, calls with the voice through the computer; see [docs/WINDOWS.md](docs/WINDOWS.md)). On both, the call voice comes through the computer's speakers and microphone. The OS-independent core also passes its tests on macOS in CI; the macOS port is experimental ([docs/PORTING.md](docs/PORTING.md)).
 
 ## What it does
 
@@ -62,7 +64,7 @@ Verified means tested on a real phone. Other phones should behave the same, sinc
 | --- | --- |
 | **Linux** (BlueZ + PipeWire) | Works today, including the call voice through the computer |
 | **Windows** | Works today with **Android and iPhone**, including the call voice through the computer ([docs/WINDOWS.md](docs/WINDOWS.md)): pairing from the app, calls, texts and contacts. Use the installer from the release: Windows only lets an installed app carry the call voice. If you start the `.exe` directly without installing it, calls still ring and can be answered, and texts and contacts work, but the voice stays on the phone. |
-| **macOS** | First port in place (IOBluetooth): builds, launches and lists paired phones. Messages, contacts and calls are written but not yet verified with a phone in range. Build with `scripts/package-macos.sh`. |
+| **macOS** | **Early stage, experimental.** Built on IOBluetooth plus an optional "Mac voice mode" that carries the call voice. Verified on one Mac mini (macOS 27.2) with an Android phone; iPhone, other Macs and other macOS versions are untested. Contributions open: see [macOS (experimental)](#macos-experimental). Build with `scripts/package-macos.sh`. |
 
 ## Setting up
 
@@ -103,6 +105,17 @@ cargo build --release -p phone-app
 
 Uninstall with `./scripts/install.sh --uninstall` (your data stays in `~/.local/share/geekbridge-phone`). After that the app keeps itself up to date.
 
+## macOS (experimental)
+
+**The macOS build is in an early stage and is experimental. Contributions are open**: testing on other Macs and phones, bug reports with logs, and code are all welcome.
+
+macOS gives apps no supported way to carry a phone call's voice, so "Mac voice mode" (*Settings > Mac voice mode*, off by default) works around it: it routes the Mac's Bluetooth controller through a small pass-through built into the app, which accepts the phone's voice link and plays it through your sound devices. Your Bluetooth mouse and headphones stay connected, and system Bluetooth is never switched off. No dongle, nothing installed on the phone.
+
+- **Requirements:** an Apple Silicon Mac, an **Android** phone paired in System Settings, and a one-time administrator approval to install a small root helper (`btmode`, from `packaging/macos`). Turn the mode on in Settings and restart the app.
+- **Known limits:** the call's microphone cannot be a Bluetooth headset (use the Mac's or a webcam's microphone; the app keeps the input off Bluetooth headsets for you); verified only on one Mac mini (BCM4388, macOS 27.2); it uses private, undocumented Apple interfaces that may change in any macOS update; iPhone support is untested.
+- **Safety:** a timer, a guard process and a reboot each put the normal Bluetooth path back. Read `packaging/macos/btmode` before installing: it lets programs running as you reroute this Mac's Bluetooth.
+- **How it works and what was tried:** [docs/MACOS-COEXIST.md](docs/MACOS-COEXIST.md). The research rig is in `tools/macos-hci-probe`.
+
 ## Troubleshooting
 
 - **"Allow message access on your phone"**: open the phone's Bluetooth entry for your computer and enable *Messages* and *Contacts* (iPhone: *Show Notifications* and *Sync Contacts*).
@@ -128,7 +141,7 @@ The app updates itself from this repository's GitHub releases (*Settings > Updat
 ## Roadmap
 
 - **Windows**: a certificate from a recognised authority (the installer now trusts the project's own, with one administrator prompt), and more phones and Windows builds tested. [Details](docs/WINDOWS.md).
-- **macOS**: the last platform to port, with Apple's Bluetooth frameworks. After it, every platform works.
+- **macOS**: move from experimental to supported: more Macs, macOS versions and phones tested, iPhone, a headset microphone during calls, and a signed, notarised app. Contributions open.
 - **More than one phone at a time**, and quick switching between them.
 - **More of the ecosystem**: shared clipboard and file drop are not part of calls and texts over Bluetooth, and would need another link.
 
@@ -141,6 +154,7 @@ A Rust workspace:
 - `phone-obex`: a portable OBEX client with MAP (texts) and PBAP (phonebook). No OS code.
 - `phone-core`: call tracking, contacts, conversations, settings, storage and the background service. No OS code.
 - `phone-linux`: the Linux platform: BlueZ and PipeWire telephony over D-Bus, RFCOMM sockets, SDP.
+- `phone-macos`: the macOS platform (IOBluetooth) and, behind Mac voice mode, the built-in Bluetooth pass-through that carries call voice. Experimental.
 - `phone-overlay`: the corner banners (a platform-neutral renderer plus a Wayland layer-shell presenter).
 - `phone-app`: the egui application.
 - `phone-update`: the self-updater (GitHub releases, checksum and signature verification, atomic install).

@@ -56,7 +56,10 @@ impl Platform for UnavailablePlatform {
 
 /// The real phone platform for this operating system.
 ///
-pub fn live_platform(paths: &phone_core::store::Paths, settings: &phone_core::settings::Settings) -> Arc<dyn Platform> {
+pub fn live_platform(
+    paths: &phone_core::store::Paths,
+    settings: &phone_core::settings::Settings,
+) -> Arc<dyn Platform> {
     let _ = (paths, settings);
     #[cfg(target_os = "linux")]
     {
@@ -83,20 +86,6 @@ pub fn live_platform(paths: &phone_core::store::Paths, settings: &phone_core::se
         Arc::new(UnavailablePlatform::new(
             "This system is not supported yet.",
         ))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_unavailable_platform_always_says_why() {
-        let p = UnavailablePlatform::new("no bus");
-        assert_eq!(p.phones().unwrap_err().to_string(), "no bus");
-        assert_eq!(p.dial("a", "1").unwrap_err().to_string(), "no bus");
-        assert!(p.open_map("a").is_err());
-        assert!(p.calls("a").is_err());
     }
 }
 
@@ -135,32 +124,18 @@ mod macos_voice {
     use phone_core::platform::Platform;
     use phone_core::settings::Settings;
     use phone_core::store::Paths;
-    use phone_macos::voice::{recover_on_start, SystemPower, VoiceMode, VoiceModeConfig};
-    use std::path::PathBuf;
+    use phone_macos::passthrough::{devices, helper, Config, Passthrough, Status};
+    use std::process::Command;
     use std::sync::{Arc, Mutex, OnceLock};
 
-    static MODE: Mutex<Option<VoiceMode>> = Mutex::new(None);
+    static MODE: Mutex<Option<Passthrough>> = Mutex::new(None);
     static NOTE: OnceLock<String> = OnceLock::new();
 
-    /// Where the helper lives: inside the app bundle when packaged, else `GBP_HELPER_DIR`.
-    fn helper_dir() -> Option<PathBuf> {
-        if let Some(dir) = std::env::var_os("GBP_HELPER_DIR") {
-            return Some(PathBuf::from(dir));
-        }
-        let exe = std::env::current_exe().ok()?;
-        let bundled = exe.parent()?.parent()?.join("Resources/helper/macos-btd");
-        bundled.join("btd.py").exists().then_some(bundled)
-    }
-
-    fn python_in(helper: &std::path::Path) -> Option<PathBuf> {
-        ["python/bin/python3", ".venv/bin/python"]
-            .iter()
-            .map(|p| helper.join(p))
-            .find(|p| p.exists())
-    }
-
     pub fn active() -> bool {
-        MODE.lock().unwrap_or_else(|e| e.into_inner()).is_some()
+        MODE.lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .is_some_and(|p| p.status() == Status::Running)
     }
 
     pub fn note() -> Option<String> {
@@ -168,19 +143,18 @@ mod macos_voice {
     }
 
     pub fn stop() {
-        if let Some(mut mode) = MODE.lock().unwrap_or_else(|e| e.into_inner()).take() {
-            mode.disable();
+        if let Some(mut pass) = MODE.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            pass.stop();
         }
     }
 
-    pub fn platform(paths: &Paths, settings: &Settings) -> Arc<dyn Platform> {
-        let marker = paths.data.join("voice-mode-bluetooth-off");
-        if recover_on_start(&marker, &SystemPower) {
-            log::warn!("the last run ended with Bluetooth switched off; it is on again");
-        }
+    /// Starts Mac voice mode first when it is switched on, and only then builds the platform:
+    /// this process must not talk to the Bluetooth daemon until the daemon has been restarted,
+    /// or what it holds is a session with the old one.
+    pub fn platform(_paths: &Paths, settings: &Settings) -> Arc<dyn Platform> {
         if settings.mac_voice_mode {
-            match start(paths, marker) {
-                Ok(platform) => return platform,
+            match start(settings) {
+                Ok(pass) => *MODE.lock().unwrap_or_else(|e| e.into_inner()) = Some(pass),
                 Err(message) => {
                     log::error!("Mac voice mode did not start: {message}");
                     let _ = NOTE.set(message);
@@ -190,31 +164,48 @@ mod macos_voice {
         Arc::new(phone_macos::MacosPlatform::new())
     }
 
-    fn start(paths: &Paths, marker: PathBuf) -> Result<Arc<dyn Platform>, String> {
-        let helper = helper_dir().ok_or("The voice helper is not installed with this app.")?;
-        let python = python_in(&helper).ok_or("The voice helper has no Python runtime.")?;
+    /// The paired devices, read by a short-lived copy of this program so that this process stays
+    /// away from the Bluetooth daemon until it has been restarted.
+    fn paired_devices() -> Result<String, String> {
         let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-        let _ = &paths;
-        let config = VoiceModeConfig {
-            python,
-            helper_script: helper.join("btd.py"),
-            // Unix socket paths are short; keep this under /tmp and private to the user.
-            dir: PathBuf::from(format!("/tmp/gbp-{}", unsafe { libc_uid() })),
-            marker,
-            extra_args: vec![],
-            env: vec![],
-            guard: Some(vec![exe.to_string_lossy().into_owned(), "--macos-btguard".into()]),
-            power: Arc::new(SystemPower),
-            audio: Some(Arc::new(phone_macos::voice::audio::vpio::VoiceProcessingDevice)),
-        };
-        let mode = VoiceMode::enable(config).map_err(|e| e.to_string())?;
-        let platform: Arc<dyn Platform> = mode.platform();
-        *MODE.lock().unwrap_or_else(|e| e.into_inner()) = Some(mode);
-        Ok(platform)
+        let out = Command::new(exe)
+            .arg("--macos-paired")
+            .output()
+            .map_err(|e| e.to_string())?;
+        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
     }
 
-    extern "C" {
-        #[link_name = "getuid"]
-        fn libc_uid() -> u32;
+    fn start(settings: &Settings) -> Result<Passthrough, String> {
+        let helper = helper::Helper::real();
+        if helper.state() != helper::State::Ready {
+            let installer = helper::installer_path()
+                .ok_or("The call helper is not installed with this app.")?;
+            helper::install(&installer)?; // macOS asks for an administrator's approval, once
+            if helper.state() != helper::State::Ready {
+                return Err("The call helper did not install.".into());
+            }
+        }
+        let choice = devices::choose(&paired_devices()?, settings.preferred_phone.as_deref())?;
+        Passthrough::start(
+            Config {
+                phone: choice.phone,
+                reconnect: choice.reconnect,
+            },
+            helper,
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_unavailable_platform_always_says_why() {
+        let p = UnavailablePlatform::new("no bus");
+        assert_eq!(p.phones().unwrap_err().to_string(), "no bus");
+        assert_eq!(p.dial("a", "1").unwrap_err().to_string(), "no bus");
+        assert!(p.open_map("a").is_err());
+        assert!(p.calls("a").is_err());
     }
 }
