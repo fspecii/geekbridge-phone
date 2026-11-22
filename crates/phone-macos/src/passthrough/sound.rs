@@ -189,8 +189,10 @@ impl Sound for CallSound {
             return vec![0; down.len()];
         };
         let samples: Vec<i16> = down
-            .chunks_exact(2)
-            .map(|b| i16::from_le_bytes([b[0], b[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|b| i16::from_le_bytes(*b))
             .collect();
         let mut resampled = Vec::with_capacity(samples.len() * 8);
         session.down.process(&samples, &mut resampled);
@@ -342,8 +344,10 @@ mod tests {
             "one answer of the same size for each packet"
         );
         let first: Vec<i16> = answers[0]
-            .chunks_exact(2)
-            .map(|b| i16::from_le_bytes([b[0], b[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|b| i16::from_le_bytes(*b))
             .collect();
         assert!(
             first.iter().all(|&x| (x - 1000).abs() <= 1),

@@ -172,8 +172,10 @@ impl CallAudio {
                         }
                         if buffer[1] == DOWN {
                             let samples: Vec<i16> = buffer[HEADER..HEADER + length]
-                                .chunks_exact(2)
-                                .map(|b| i16::from_le_bytes([b[0], b[1]]))
+                                .as_chunks::<2>()
+                                .0
+                                .iter()
+                                .map(|b| i16::from_le_bytes(*b))
                                 .collect();
                             let mut out = Vec::with_capacity(samples.len() * 6);
                             up_sampler.process(&samples, &mut out);
