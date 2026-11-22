@@ -89,20 +89,6 @@ pub fn live_platform(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_unavailable_platform_always_says_why() {
-        let p = UnavailablePlatform::new("no bus");
-        assert_eq!(p.phones().unwrap_err().to_string(), "no bus");
-        assert_eq!(p.dial("a", "1").unwrap_err().to_string(), "no bus");
-        assert!(p.open_map("a").is_err());
-        assert!(p.calls("a").is_err());
-    }
-}
-
 /// Stops Mac voice mode, if it runs, and puts system Bluetooth back. Call when the app exits.
 pub fn shutdown() {
     #[cfg(target_os = "macos")]
@@ -207,5 +193,19 @@ mod macos_voice {
             },
             helper,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_unavailable_platform_always_says_why() {
+        let p = UnavailablePlatform::new("no bus");
+        assert_eq!(p.phones().unwrap_err().to_string(), "no bus");
+        assert_eq!(p.dial("a", "1").unwrap_err().to_string(), "no bus");
+        assert!(p.open_map("a").is_err());
+        assert!(p.calls("a").is_err());
     }
 }
