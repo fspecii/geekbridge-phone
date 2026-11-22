@@ -66,7 +66,7 @@ Verified means tested on a real phone. Other phones should behave the same, sinc
 | --- | --- |
 | **Linux** (BlueZ + PipeWire) | Works today, including the call voice through the computer |
 | **Windows** | Works today with **Android and iPhone**, including the call voice through the computer ([docs/WINDOWS.md](docs/WINDOWS.md)): pairing from the app, calls, texts and contacts. Use the installer from the release: Windows only lets an installed app carry the call voice. If you start the `.exe` directly without installing it, calls still ring and can be answered, and texts and contacts work, but the voice stays on the phone. |
-| **macOS** | **Early stage, experimental.** Built on IOBluetooth plus an optional "Mac voice mode" that carries the call voice. Verified on one Mac mini (macOS 27.2) with an Android phone; iPhone, other Macs and other macOS versions are untested. Contributions open: see [macOS (experimental)](#macos-experimental). Build with `scripts/package-macos.sh`. |
+| **macOS** | **Early stage, experimental.** Built on IOBluetooth plus an optional "Mac voice mode" that carries the call voice. Verified on one Mac mini (macOS 27.2) with an Android phone; other Macs and macOS versions are untested. An iPhone on a Mac is already handled natively by macOS, so GeekBridge does not target that pairing. Contributions open: see [macOS (experimental)](#macos-experimental). Build with `scripts/package-macos.sh`. |
 
 ## Setting up
 
@@ -114,7 +114,9 @@ Uninstall with `./scripts/install.sh --uninstall` (your data stays in `~/.local/
 macOS gives apps no supported way to carry a phone call's voice, so "Mac voice mode" (*Settings > Mac voice mode*, off by default) works around it: it routes the Mac's Bluetooth controller through a small pass-through built into the app, which accepts the phone's voice link and plays it through your sound devices. Your Bluetooth mouse and headphones stay connected, and system Bluetooth is never switched off. No dongle, nothing installed on the phone.
 
 - **Requirements:** an Apple Silicon Mac, an **Android** phone paired in System Settings, and a one-time administrator approval to install a small root helper (`btmode`, from `packaging/macos`). Turn the mode on in Settings and restart the app.
-- **Known limits:** the call's microphone cannot be a Bluetooth headset (use the Mac's or a webcam's microphone; the app keeps the input off Bluetooth headsets for you); verified only on one Mac mini (BCM4388, macOS 27.2); it uses private, undocumented Apple interfaces that may change in any macOS update; iPhone support is untested.
+- **Headsets:** Bluetooth headphones carry the caller's voice, and a Bluetooth headset's microphone worked for your side of the call in the latest tests.
+- **iPhone:** not needed here. macOS already answers an iPhone's calls and texts natively, so Mac voice mode is for Android phones.
+- **Known limits:** verified only on one Mac mini (BCM4388, macOS 27.2); it uses private, undocumented Apple interfaces that may change in any macOS update.
 - **Safety:** a timer, a guard process and a reboot each put the normal Bluetooth path back. Read `packaging/macos/btmode` before installing: it lets programs running as you reroute this Mac's Bluetooth.
 - **How it works and what was tried:** [docs/MACOS-COEXIST.md](docs/MACOS-COEXIST.md). The research rig is in `tools/macos-hci-probe`.
 
@@ -143,7 +145,7 @@ The app updates itself from this repository's GitHub releases (*Settings > Updat
 ## Roadmap
 
 - **Windows**: a certificate from a recognised authority (the installer now trusts the project's own, with one administrator prompt), and more phones and Windows builds tested. [Details](docs/WINDOWS.md).
-- **macOS**: move from experimental to supported: more Macs, macOS versions and phones tested, iPhone, a headset microphone during calls, and a signed, notarised app. Contributions open.
+- **macOS**: move from experimental to supported: more Macs, macOS versions, Bluetooth chips and Android phones tested, and a signed, notarised app. Contributions open.
 - **More than one phone at a time**, and quick switching between them.
 - **More of the ecosystem**: shared clipboard and file drop are not part of calls and texts over Bluetooth, and would need another link.
 
