@@ -157,7 +157,8 @@ pub fn recover_on_start(marker: &Path, power: &dyn Power) -> bool {
 
 fn pid_alive(pid: i32) -> bool {
     // SAFETY: signal 0 only checks that the process exists.
-    unsafe { libc::kill(pid, 0) == 0 || *libc::__error() == libc::EPERM }
+    let alive = unsafe { libc::kill(pid, 0) } == 0;
+    alive || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
 /// The guard process: waits for the app to go, then restores Bluetooth if the marker is still
