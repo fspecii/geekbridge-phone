@@ -19,6 +19,8 @@ GeekBridge Phone brings that to **Android and iPhone, on Linux and Windows today
 
 <sub>Screenshots use a demo phone with invented people (`geekbridge-phone --demo`).</sub>
 
+**Why it exists, in 3 minutes:** [watch the story and read how it was built](https://valineagu.com/blog/geekbridge-phone-answer-calls-on-any-computer/) on valineagu.com.
+
 ## Why this exists
 
 Phones and computers should work together whatever you buy. Today the smooth experience is sold as part of one company's ecosystem, and everyone else gets a lock-in or a cloud account in exchange. But the pieces have always been open: calls, contacts and messages travel over **standard Bluetooth profiles** that cars, headsets and every phone have spoken for years. Nobody has built the friendly desktop side for all phones and all operating systems.
@@ -170,6 +172,15 @@ cargo fmt --all -- --check
 cargo run -p phone-app --features demo -- --demo   # a fake phone with invented data
 ./scripts/check-portable.sh                         # type-check the portable crates for Windows and macOS
 ```
+
+## Who made this
+
+GeekBridge Phone is built by **Vali Neagu**, an independent developer from Romania who also made [LinPad OS](https://linpados.com) (Linux for the iPad).
+
+- Personal site and the story behind this project: [valineagu.com](https://valineagu.com/blog/geekbridge-phone-answer-calls-on-any-computer/)
+- X: [@AmbsdOP](https://x.com/AmbsdOP) · GitHub: [@fspecii](https://github.com/fspecii)
+
+**Want something built?** I design and build websites, web apps and native apps through my studio, [Web Design Studio London](https://webdesignstudio.london). [Get in touch](https://webdesignstudio.london/contact) if you'd like to work with me.
 
 ## Licence and credits
 
