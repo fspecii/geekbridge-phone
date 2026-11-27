@@ -24,3 +24,8 @@ cpal = "0.18.2"
 [dev-dependencies]
 phone-obex = { path = "../phone-obex" }
 tempfile = "3"
+
+# Must run on the process's main thread, which the default test harness never uses.
+[[test]]
+name = "paired_on_main_thread"
+harness = false
